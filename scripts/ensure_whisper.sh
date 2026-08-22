@@ -7,8 +7,11 @@ source_model="$repo_root/models/ggml-tiny.en.bin"
 quant_model="$repo_root/models/ggml-tiny.en-q5_1.bin"
 port="${GEMMA_WHISPER_PORT:-8178}"
 health="http://127.0.0.1:$port/health"
+pid_file="$repo_root/.runtime/whisper-server.pid"
+prompt="Look left. Look right. Look up. Look down. Look center. What do you see? Find my AirPods. AirPods charging case. Find my smartphone. Find my iPhone. Is this a scam? What does this say? Volume up. Volume down."
 
-if python3 - "$health" <<'PY'
+server_healthy() {
+  python3 - "$health" <<'PY'
 import sys
 import urllib.request
 
@@ -18,8 +21,26 @@ try:
 except Exception:
     raise SystemExit(1)
 PY
-then
-  exit 0
+}
+
+if server_healthy; then
+  existing_pid="$(cat "$pid_file" 2>/dev/null || true)"
+  existing_command=""
+  if [[ "$existing_pid" =~ ^[0-9]+$ && -r "/proc/$existing_pid/cmdline" ]]; then
+    existing_command="$(tr '\0' ' ' < "/proc/$existing_pid/cmdline")"
+  fi
+  if [[ "$existing_command" == *"$runtime_dir/whisper-server"* && "$existing_command" == *"--prompt $prompt"* ]]; then
+    exit 0
+  fi
+  if [[ "$existing_command" != *"$runtime_dir/whisper-server"* || "$existing_command" != *"--port $port"* ]]; then
+    echo "ERROR: Whisper health endpoint is occupied by an unverified process" >&2
+    exit 1
+  fi
+  kill "$existing_pid"
+  for _ in $(seq 1 50); do
+    kill -0 "$existing_pid" 2>/dev/null || break
+    sleep 0.1
+  done
 fi
 
 for required in "$runtime_dir/whisper-server" "$runtime_dir/whisper-quantize" "$source_model"; do
@@ -36,28 +57,18 @@ fi
 mkdir -p "$repo_root/logs" "$repo_root/.runtime"
 nohup "$runtime_dir/whisper-server" \
   -m "$quant_model" -t 6 -bo 1 -bs 1 -nf -ng \
-  --prompt "Look left. Look right. Look up. Look down. Look center. What do you see? Volume up. Volume down." \
+  --prompt "$prompt" \
   --host 127.0.0.1 --port "$port" \
   >"$repo_root/logs/whisper-server.log" 2>&1 &
 server_pid=$!
-echo "$server_pid" >"$repo_root/.runtime/whisper-server.pid"
+echo "$server_pid" >"$pid_file"
 
 for _ in $(seq 1 60); do
   if ! kill -0 "$server_pid" 2>/dev/null; then
     echo "ERROR: Whisper server exited; inspect logs/whisper-server.log" >&2
     exit 1
   fi
-  if python3 - "$health" <<'PY'
-import sys
-import urllib.request
-
-try:
-    with urllib.request.urlopen(sys.argv[1], timeout=1) as response:
-        raise SystemExit(0 if response.status == 200 else 1)
-except Exception:
-    raise SystemExit(1)
-PY
-  then
+  if server_healthy; then
     exit 0
   fi
   sleep 0.5

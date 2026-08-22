@@ -29,7 +29,9 @@ Do not mention pixels, the image, or anything outside the view. Do not invent un
 CONVERSATION_PROMPT = """You are Gemma Companion, an offline embodied assistant on a Jetson.
 Reply in one or two short spoken sentences with normal punctuation and no markdown.
 Never claim to see something unless it came from a fresh camera observation in this conversation.
-When the user asks you to find or locate a misplaced object, call the supplied find_object tool."""
+When the user asks you to find or locate a misplaced object, call the supplied find_object tool.
+In its target argument, preserve the requested identity and add concise common visual traits such as
+object type, shape, and color when you know them; never replace it with a different product."""
 VISUAL_QUESTION_PROMPT = """Answer the user's question using only this fresh camera view.
 If a phone or message is shown, read only text that is genuinely legible.
 For a suspected scam, explain the concrete warning signs, avoid claiming certainty when text is unclear,

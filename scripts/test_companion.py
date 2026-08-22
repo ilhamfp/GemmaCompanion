@@ -114,6 +114,12 @@ def _test_narrated_finder_actions() -> None:
         raise AssertionError("finder accepted a narrated miss before completing its search")
     if parse_narrated_not_found("The smartphone is on the table.", final_direction=True) is not None:
         raise AssertionError("finder converted positive evidence into a miss")
+    alternate_final_miss = (
+        "I have searched the image. I do not see an iPhone. "
+        "I suggest checking the kitchen counter."
+    )
+    if parse_narrated_not_found(alternate_final_miss, final_direction=True) != "report_not_found":
+        raise AssertionError("finder rejected Gemma's alternate honest final miss")
 
 
 def main() -> int:

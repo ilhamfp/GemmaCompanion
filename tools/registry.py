@@ -56,7 +56,9 @@ FIND_OBJECT_SCHEMA = {
                 "target": {
                     "type": "string",
                     "description": (
-                        "A concise visual object description, such as AirPods charging case."
+                        "A concise visual description expanded beyond only a product name. "
+                        "Include common shape, color, and object type when known, such as "
+                        "small white Apple AirPods wireless-earbud charging case."
                     ),
                 }
             },

@@ -33,13 +33,12 @@ from tools.registry import (
 SEARCH_ORDER = ("center", "left", "right", "up", "down")
 LOOK_FOR_DIRECTION = {direction: f"look_{direction}" for direction in SEARCH_ORDER}
 SEARCH_POSITIONS = {
-    # Room-calibrated initial view faces forward and above the tabletop;
-    # the autonomous left/tabletop sweep reveals the requested device.
-    "center": (0.0, 25.0),
+    # Start on the front tabletop, where small everyday objects are normally placed.
+    "center": (0.0, -25.0),
     "left": (-120.0, -25.0),
     "right": (120.0, -25.0),
     "up": (0.0, 25.0),
-    "down": (0.0, -25.0),
+    "down": (0.0, -30.0),
 }
 MEDICAL_WORDS = {
     "dose",
@@ -97,7 +96,7 @@ def parse_narrated_not_found(model_text: str, *, final_direction: bool) -> str |
     if not final_direction:
         return None
     negative_result = re.search(
-        r"\b(?:(?:did|could|can)\s+not|didn't|couldn't|can't|was\s+unable\s+to)\s+"
+        r"\b(?:(?:did|do|does|could|can)\s+not|didn't|doesn't|couldn't|can't|cannot|was\s+unable\s+to)\s+"
         r"(?:find|see|locate)\b|\b(?:not\s+found|no\s+matching\s+object)\b",
         model_text,
         flags=re.IGNORECASE,
@@ -190,6 +189,8 @@ class ElderlyFinder:
         vision_prompt = f"""Inspect only this fresh image for the user's {target}.
 Current physical camera direction: {direction}.
 Pay attention to the target's stated color, brand, shape, and object type.
+Use ordinary visual knowledge to recognize common products by shape even when logos are unreadable.
+For wireless earbuds, the small charging case counts as the target unless the user asks for one loose earbud.
 Do not substitute a merely similar object or infer one outside the frame.
 Brand text may be unreadable, so describe any candidate matching the target's physical appearance and type.
 In one grounded sentence, state what matching candidate is visible and locate it relative to a table, chair, laptop, cable, or other physical object.
