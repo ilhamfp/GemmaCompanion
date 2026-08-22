@@ -65,5 +65,5 @@ evidence: |
   tool_call: PASS; latency_seconds: 0.550; parsed: look_right
   free_h_after_load: Mem:           7.3Gi       4.0Gi       135Mi       5.2Mi       3.4Gi       3.3Gi; result: PASS Gemma text, vision, tool call, latency, and RAM headroom
 fallback_taken: none
-commit: PENDING
+commit: b81c6cf
 notes: Official Gemma 4 E2B instruction-tuned QAT Q4_0 weights and multimodal projector run through llama.cpp's JetPack 6 CUDA backend. The generic CUDA backend was rejected after showing 0% GPU activity and 42.98 s text latency. The accepted 1024px live-camera vision request stayed well below 20 s; available RAM stayed safely above the 500 MiB guard.
