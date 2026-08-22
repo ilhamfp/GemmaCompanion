@@ -46,10 +46,14 @@ Examples:
 - `What do you see?` — captures a fresh still at the current physical direction, then answers.
 - `Look left and tell me what you see.` — moves first, then captures and explains.
 - `Stop.` or `Be quiet.` — cancels current playback.
+- `Volume up.` or `Volume down.` — adjusts the AT-CSP1 by ten percentage points.
+- `Set volume to 90 percent.` — selects an exact hardware playback level.
 - `Go to sleep.` — remains locally available but ignores other requests.
 - `Wake up.` — resumes normal requests.
 
 To interrupt, do not wait for Gemma to finish. Unmute while it is speaking, say the new request, and mute again. Human voice onset terminates active playback; the newest request invalidates any older unfinished model response.
+
+Playback defaults to 85% at each companion start. The voice commands above remain available throughout the session. From a Jetson terminal, `make volume VOLUME=90` provides the same adjustment; `GEMMA_PLAYBACK_VOLUME` changes the service default.
 
 ## Recommended live-demo sequence
 

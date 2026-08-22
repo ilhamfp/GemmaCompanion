@@ -32,12 +32,16 @@ def _pcm(level: int, samples: int) -> bytes:
 def _test_parser_and_segmenter() -> tuple[float, float]:
     expected = {
         "Look left!": ("look", "left"),
+        "Look laugh": ("look", "left"),
+        "Left": ("look", "left"),
         "Please turn to the right": ("look", "right"),
         "What do you see?": ("describe", None),
         "Look up and tell me what you see": ("look_and_describe", "up"),
         "Be quiet": ("stop", None),
         "Go to sleep": ("sleep", None),
         "Wake up": ("wake", None),
+        "Turn it up": ("volume_up", None),
+        "Volume down": ("volume_down", None),
         "How are you?": ("chat", None),
     }
     for phrase, wanted in expected.items():
@@ -45,6 +49,9 @@ def _test_parser_and_segmenter() -> tuple[float, float]:
         actual = (intent.kind, intent.direction)
         if actual != wanted:
             raise AssertionError(f"{phrase!r} parsed as {actual}, expected {wanted}")
+    volume_intent = parse_intent("Set volume to 92 percent")
+    if volume_intent.kind != "volume_set" or volume_intent.value != 92:
+        raise AssertionError(f"numeric volume parsed incorrectly: {volume_intent}")
 
     segmenter = VoiceSegmenter()
     muted = _pcm(100, segmenter.chunk_bytes // 2)

@@ -17,6 +17,7 @@ from audio.interruptible import InterruptibleSpeech
 from audio.fast_stt import transcribe_fast
 from camera.capture import capture_image
 from camera.obsbot import look_center, look_down, look_left, look_right, look_up
+from audio.volume import VOLUME_STEP, adjust_volume, set_volume
 
 MIN_AVAILABLE_BYTES = 500 * 1024 * 1024
 READY_CUE = "Hey, Gemma here!"
@@ -39,6 +40,7 @@ def available_memory_bytes() -> int:
 class Intent:
     kind: str
     direction: str | None = None
+    value: int | None = None
 
 
 @dataclass(frozen=True)
@@ -62,8 +64,37 @@ def parse_intent(text: str) -> Intent:
     if "wake up" in normalized or "start listening" in normalized:
         return Intent("wake")
 
+    volume_match = re.search(r"\bvolume(?:\s+(?:to|at))?\s+(\d{1,3})\b", text.casefold())
+    if volume_match:
+        return Intent("volume_set", value=int(volume_match.group(1)))
+    if (
+        "volume up" in normalized
+        or "speak louder" in normalized
+        or "make it louder" in normalized
+        or "turn it up" in normalized
+    ):
+        return Intent("volume_up")
+    if (
+        "volume down" in normalized
+        or "speak quieter" in normalized
+        or "make it quieter" in normalized
+        or "turn it down" in normalized
+    ):
+        return Intent("volume_down")
+
+    direction_aliases = {
+        "left": {"left", "laugh", "loft"},
+        "right": {"right", "write"},
+        "up": {"up"},
+        "down": {"down"},
+        "center": {"center", "centre"},
+    }
     direction = next(
-        (candidate for candidate in ("left", "right", "up", "down", "center") if candidate in words),
+        (
+            candidate
+            for candidate, aliases in direction_aliases.items()
+            if words & aliases
+        ),
         None,
     )
     movement_words = {"look", "turn", "face", "move", "point"}
@@ -79,7 +110,7 @@ def parse_intent(text: str) -> Intent:
             "tell me what you see",
         )
     )
-    if direction and words & movement_words:
+    if direction and (words & movement_words or len(words) == 1):
         return Intent("look_and_describe" if asks_to_see else "look", direction)
     if asks_to_see:
         return Intent("describe")
@@ -272,6 +303,29 @@ class CompanionSession:
         if intent.kind == "wake":
             self._asleep = False
             result = self._result("wake", "I'm awake.", None, started)
+            self._publish_result(result, active_token)
+            return result
+        if intent.kind in {"volume_set", "volume_up", "volume_down"}:
+            if intent.kind == "volume_set":
+                if intent.value is None or not 0 <= intent.value <= 100:
+                    result = self._result(
+                        "volume_invalid",
+                        "Please choose a volume from zero to one hundred percent.",
+                        None,
+                        started,
+                    )
+                    self._publish_result(result, active_token)
+                    return result
+                volume = set_volume(intent.value)
+            else:
+                delta = VOLUME_STEP if intent.kind == "volume_up" else -VOLUME_STEP
+                volume = adjust_volume(delta)
+            result = self._result(
+                intent.kind,
+                f"Volume {volume} percent.",
+                None,
+                started,
+            )
             self._publish_result(result, active_token)
             return result
         if self._asleep:

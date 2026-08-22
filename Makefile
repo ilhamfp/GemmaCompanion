@@ -1,6 +1,7 @@
-.PHONY: runtime companion demo-akinator demo-elderly prep-elderly-negative reset
+.PHONY: runtime companion volume demo-akinator demo-elderly prep-elderly-negative reset
 
 DEMO_ARGS ?=
+VOLUME ?= 85
 PYTHON := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
 
 runtime:
@@ -8,6 +9,9 @@ runtime:
 
 companion:
 	@./scripts/run_companion.sh
+
+volume:
+	@$(PYTHON) scripts/set_volume.py $(VOLUME)
 
 demo-akinator: runtime
 	@$(PYTHON) main.py --mode akinator $(DEMO_ARGS)

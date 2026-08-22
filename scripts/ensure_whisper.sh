@@ -36,6 +36,7 @@ fi
 mkdir -p "$repo_root/logs" "$repo_root/.runtime"
 nohup "$runtime_dir/whisper-server" \
   -m "$quant_model" -t 6 -bo 1 -bs 1 -nf -ng \
+  --prompt "Look left. Look right. Look up. Look down. Look center. What do you see? Volume up. Volume down." \
   --host 127.0.0.1 --port "$port" \
   >"$repo_root/logs/whisper-server.log" 2>&1 &
 server_pid=$!

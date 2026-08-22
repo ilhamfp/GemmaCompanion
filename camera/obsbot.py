@@ -113,6 +113,18 @@ def look_at(pan_deg: float, tilt_deg: float) -> tuple[float, float]:
     return pan_value / UVC_UNITS_PER_DEGREE, tilt_value / UVC_UNITS_PER_DEGREE
 
 
+def current_position() -> tuple[float, float]:
+    """Read the current physical UVC pan/tilt position without moving."""
+
+    fd = _open_device()
+    try:
+        pan_value = _get_control(fd, _PAN_ABSOLUTE)
+        tilt_value = _get_control(fd, _TILT_ABSOLUTE)
+    finally:
+        os.close(fd)
+    return pan_value / UVC_UNITS_PER_DEGREE, tilt_value / UVC_UNITS_PER_DEGREE
+
+
 def look_left() -> tuple[float, float]:
     return look_at(-120, 0)
 
