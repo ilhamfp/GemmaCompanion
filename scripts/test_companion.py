@@ -23,6 +23,7 @@ from demos.companion import (  # noqa: E402
     available_memory_bytes,
     parse_intent,
 )
+from demos.elderly import parse_narrated_look_action  # noqa: E402
 
 
 def _pcm(level: int, samples: int) -> bytes:
@@ -82,6 +83,21 @@ def _test_latest_turn_wins() -> None:
         raise AssertionError("a stale response was published")
 
 
+def _test_narrated_finder_actions() -> None:
+    accepted = {
+        "I see no Apple Airbox. I will look down now.": "look_down",
+        "I will search for the smartphone. I will start by looking right.": "look_right",
+    }
+    for text, expected in accepted.items():
+        actual = parse_narrated_look_action(text, expected)
+        if actual != expected:
+            raise AssertionError(f"narrated finder action parsed as {actual!r}: {text!r}")
+    if parse_narrated_look_action("I will look left now.", "look_right") is not None:
+        raise AssertionError("finder accepted a narrated direction outside the bounded search order")
+    if parse_narrated_look_action("I do not see a smartphone.", "look_right") is not None:
+        raise AssertionError("finder invented a movement from evidence-only prose")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--unit-only", action="store_true")
@@ -89,11 +105,13 @@ def main() -> int:
 
     segment_seconds, peak_rms = _test_parser_and_segmenter()
     _test_latest_turn_wins()
+    _test_narrated_finder_actions()
     print(
         f"parser_segmenter: PASS; segment_seconds={segment_seconds:.3f}; "
         f"peak_rms={peak_rms:.0f}"
     )
     print("latest_turn_wins: PASS; stale response discarded")
+    print("finder_narration: PASS; expected look accepted; mismatched look rejected")
     if args.unit_only:
         print("result: PASS pure companion routing and audio segmentation")
         return 0

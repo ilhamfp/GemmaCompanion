@@ -76,6 +76,21 @@ class FinderCancelled(AgentLoopError):
     """Raised when a newer spoken turn invalidates an active object search."""
 
 
+def parse_narrated_look_action(model_text: str, expected_tool: str | None) -> str | None:
+    """Accept a narrated look only when it matches the bounded search's next tool."""
+
+    if expected_tool is None or not expected_tool.startswith("look_"):
+        return None
+    direction = re.escape(expected_tool.removeprefix("look_"))
+    narrated = re.search(
+        rf"\b(?:will|next|now|start(?:ing)?|continue|then)\b"
+        rf"[^\n.!?]{{0,80}}\blook(?:ing)?(?:\s+at)?\s+(?:the\s+)?{direction}\b",
+        model_text,
+        flags=re.IGNORECASE,
+    )
+    return expected_tool if narrated else None
+
+
 class ElderlyFinder:
     def __init__(
         self,
@@ -240,6 +255,15 @@ Call exactly one supplied tool and do not invent a location."""
         if plain_action == next_tool or (next_tool is None and plain_action == "report_not_found"):
             self.loop.log("PARSED_TEXT_ACTION", tool=plain_action, text=model_text)
             return plain_action, ""
+        narrated_action = parse_narrated_look_action(model_text, next_tool)
+        if narrated_action is not None:
+            self.loop.log(
+                "PARSED_NARRATED_ACTION",
+                tool=narrated_action,
+                expected_tool=next_tool,
+                text=model_text,
+            )
+            return narrated_action, ""
         raise AgentLoopError(f"Gemma returned no parseable finder action: {model_text!r}")
 
     def search_live(
