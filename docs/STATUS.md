@@ -183,3 +183,17 @@ evidence: |
 fallback_taken: none
 commit: 50c433d
 notes: A blind miss was traced to a partially clipped AirPods case at the extreme edge of a physically covered frame. Wide misses now receive one four-panel magnified edge inspection; target rewriting cannot discard product identity; a target-blind second observation rejects explicit color conflicts; detail JPEGs are atomic and size-validated; and a model request is bounded to 30 seconds. The exact hard frame passed 3/3, a newly hidden live placement passed 3/3 at direction=right in 23.651, 20.266, and 21.786 seconds, and the full CompanionSession handoff found it at direction=right in 24.508 seconds. Per the human's explicit instruction, this commit was synced to the Jetson but was not pushed to GitHub. The installed service still needs a human-authorized restart to load the new process image.
+
+## M14 Arbitrary visible-reference routing
+status: DONE
+verified_by: scripts/test_visual_routing.py
+verified_at: 2026-08-22 16:30 SGT
+evidence: |
+  visual_route_2: PASS; prompt=Can you identify this object?; action=visual_question; router=none; latency_seconds=2.614; frame=/home/iputra/gemma-companion/captures/companion/capture-66c3be089c2b4eb2a827351c7b20cf60.jpg
+  visual_route_3: PASS; prompt=What is written on this label?; action=visual_question; router=inspect_view; latency_seconds=2.257; frame=/home/iputra/gemma-companion/captures/companion/capture-95ebd9f5d1c541139b2a95e85810cf27.jpg
+  negative_controls: PASS; general knowledge stayed chat; misplaced object stayed find_object
+  fresh_frames: PASS; unique=3/3
+  result: PASS arbitrary visible-reference wording captured fresh camera frames
+fallback_taken: none
+commit: f1fd4a9
+notes: The new inspect_view tool lets Gemma request a fresh camera frame for visible references, while a semantic deictic fallback guarantees current-object, holding, color, identity, label, and screen questions do not become camera-less chat when the small model omits the tool call. `What color is the object I'm holding?` also passed with action=visual_question in 2.557 seconds on its own unique frame. General knowledge remained chat, `Find my blue mug` and `Find my AirPods` remained find_object, and the full boot cue, physical PTZ, and fresh-vision regression passed. Companion camera capture now retries three transient malformed frames. Per the human's instruction, no GitHub push was performed; this change was synced only to the Jetson and requires a human-authorized service restart to load.

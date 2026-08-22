@@ -736,3 +736,34 @@ companion_log: /home/iputra/gemma-companion/logs/companion-19700101-073814-17940
 ```
 
 The final continuous companion regression reported `result: PASS continuous companion routing, physical PTZ, and fresh vision`, with 2273.8 MiB available. Disk remained 417 GiB free. Implementation commit: `50c433d`. Per the human's explicit instruction, no GitHub push was performed; files were synced only to the Jetson. The active boot service still requires a human-authorized restart before the stage demo.
+
+## M14 Arbitrary visible-reference routing
+
+### JETSON — fresh visual tool and semantic fallback
+
+Gemma now receives an `inspect_view` tool alongside `find_object`. Its tool description requires a fresh frame for questions about this or that object, something being held or shown, visible color or identity, and writing on a label or screen. Because the 2B model did not reliably call the tool for `Can you identify this object?`, a general semantic fallback covers deictic and physical-reference questions without enumerating exact sentences.
+
+Command:
+
+```sh
+cd ~/gemma-companion && python3 scripts/test_visual_routing.py
+```
+
+Exit code: 0.
+
+```text
+visual_route_1: PASS; prompt=What color is the object I'm holding?; action=visual_question; router=inspect_view; latency_seconds=2.557; frame=/home/iputra/gemma-companion/captures/companion/capture-4962de1449ff42e0bd3f3f4e840ccf48.jpg
+visual_route_2: PASS; prompt=Can you identify this object?; action=visual_question; router=none; latency_seconds=2.614; frame=/home/iputra/gemma-companion/captures/companion/capture-66c3be089c2b4eb2a827351c7b20cf60.jpg
+visual_route_3: PASS; prompt=What is written on this label?; action=visual_question; router=inspect_view; latency_seconds=2.257; frame=/home/iputra/gemma-companion/captures/companion/capture-95ebd9f5d1c541139b2a95e85810cf27.jpg
+negative_controls: PASS; general knowledge stayed chat; misplaced object stayed find_object
+fresh_frames: PASS; unique=3/3
+result: PASS arbitrary visible-reference wording captured fresh camera frames
+```
+
+The semantic boundary unit check kept `Can you identify the capital of France?` in ordinary chat while routing `Can you identify this object?` to fresh vision. A full companion regression then passed the exact `Hi, I'm Gemma!` boot cue, direct left/right/center movement, and a new visual description. Finally, `Find my AirPods.` still produced:
+
+```text
+airpods_tool_regression: PASS; tool=find_object; arguments={'target': 'AirPods wireless-earbud charging case'}
+```
+
+One concurrent diagnostic run exposed a transient malformed camera JPEG during boot. Companion-level boot, describe, and visual-question capture now retry up to three times; the final full regression passed after this change. Implementation commit: `f1fd4a9`. No GitHub push was performed per the human's explicit instruction.
