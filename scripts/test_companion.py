@@ -26,6 +26,7 @@ from demos.companion import (  # noqa: E402
 from demos.elderly import (  # noqa: E402
     parse_narrated_look_action,
     parse_narrated_not_found,
+    parse_textual_report_found,
 )
 
 
@@ -120,6 +121,12 @@ def _test_narrated_finder_actions() -> None:
     )
     if parse_narrated_not_found(alternate_final_miss, final_direction=True) != "report_not_found":
         raise AssertionError("finder rejected Gemma's alternate honest final miss")
+    textual_tool = 'report_found{location:<|"|>on the dark surface in front of a laptop<|"|>}'
+    parsed_location = parse_textual_report_found(textual_tool)
+    if parsed_location != "on the dark tabletop in front of a laptop":
+        raise AssertionError(f"textual report_found parsed as {parsed_location!r}")
+    if parse_textual_report_found("report_found{location:nearby}") is not None:
+        raise AssertionError("finder accepted an ungrounded textual report_found")
 
 
 def main() -> int:

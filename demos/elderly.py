@@ -104,6 +104,36 @@ def parse_narrated_not_found(model_text: str, *, final_direction: bool) -> str |
     return "report_not_found" if negative_result else None
 
 
+def parse_textual_report_found(model_text: str) -> str | None:
+    """Parse llama.cpp's occasional textual serialization of report_found."""
+
+    match = re.fullmatch(
+        r"\s*report_found\s*\{\s*location\s*:\s*(.+?)\s*\}\s*",
+        model_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return None
+    location = match.group(1).replace('<|"|>', "").strip().strip("\"'").strip()
+    if not location:
+        return None
+    physical_anchors = (
+        "table",
+        "desk",
+        "chair",
+        "laptop",
+        "cable",
+        "cup",
+        "bag",
+        "phone",
+        "smartphone",
+        "surface",
+    )
+    if not any(anchor in location.casefold() for anchor in physical_anchors):
+        return None
+    return re.sub(r"\bsurface\b", "tabletop", location, flags=re.IGNORECASE)
+
+
 class ElderlyFinder:
     def __init__(
         self,
@@ -169,6 +199,123 @@ class ElderlyFinder:
         arguments = (call.get("function") or {}).get("arguments") or {}
         return " ".join(str(arguments.get(key) or "").split())
 
+    def _ground_location(self, location: str, target: str, visual_evidence: str) -> str:
+        """Normalize one found location into short furniture-relative speech."""
+
+        clean = " ".join(location.split()).strip()
+        if "|" in clean:
+            cells = [
+                cell.strip()
+                for cell in re.findall(r"\|\s*([^|]+?)\s*(?=\|)", clean)
+                if cell.strip() and not re.fullmatch(r"[-: ]+", cell.strip())
+            ]
+            if cells:
+                clean = cells[-1]
+        physical_anchors = (
+            "table",
+            "desk",
+            "chair",
+            "laptop",
+            "cable",
+            "cup",
+            "bag",
+            "phone",
+            "smartphone",
+        )
+        if (
+            not clean
+            or "image" in clean.casefold()
+            or not any(anchor in clean.casefold() for anchor in physical_anchors)
+        ):
+            refined, _ = self.loop._step(
+                [
+                    {
+                        "role": "system",
+                        "content": "Rewrite visual locations in plain furniture-relative language.",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Target: {target}. Grounded visual evidence: {visual_evidence}. "
+                            f"Original location wording: {clean}. Reply with only a short physical "
+                            "location using a table, chair, laptop, cable, or another nearby object. "
+                            "Never use markdown, a table, the word image, or the word camera."
+                        ),
+                    },
+                ]
+            )
+            clean = " ".join(refined.split()).rstrip(".")
+        return re.sub(r"\bsurface\b", "tabletop", clean, flags=re.IGNORECASE)
+
+    def _resolve_decision(
+        self,
+        model_text: str,
+        calls: list[dict],
+        *,
+        next_tool: str | None,
+        target: str,
+        visual_evidence: str,
+    ) -> tuple[str, str] | None:
+        if calls:
+            call = calls[0]
+            action = tool_name(call)
+            if action == "report_found":
+                location = self._ground_location(
+                    self._argument(call, "location"), target, visual_evidence
+                )
+                return action, location
+            if action == next_tool or (next_tool is None and action == "report_not_found"):
+                return action, ""
+            return None
+
+        textual_location = parse_textual_report_found(model_text)
+        if textual_location is not None:
+            location = self._ground_location(textual_location, target, visual_evidence)
+            self.loop.log(
+                "PARSED_TEXT_ACTION",
+                tool="report_found",
+                text=model_text,
+                location=location,
+            )
+            return "report_found", location
+        match = re.match(r"^FOUND:\s*(.+)$", model_text, flags=re.IGNORECASE)
+        if match:
+            location = self._ground_location(match.group(1).strip(), target, visual_evidence)
+            self.loop.log(
+                "PARSED_TEXT_ACTION", tool="report_found", text=model_text, location=location
+            )
+            return "report_found", location
+        if model_text.upper().startswith("NOT_FOUND"):
+            fallback_action = next_tool or "report_not_found"
+            self.loop.log("PARSED_TEXT_ACTION", tool=fallback_action, text=model_text)
+            return fallback_action, ""
+        plain_action = model_text.strip().lower().strip("` .")
+        if plain_action == next_tool or (next_tool is None and plain_action == "report_not_found"):
+            self.loop.log("PARSED_TEXT_ACTION", tool=plain_action, text=model_text)
+            return plain_action, ""
+        narrated_action = parse_narrated_look_action(model_text, next_tool)
+        if narrated_action is not None:
+            self.loop.log(
+                "PARSED_NARRATED_ACTION",
+                tool=narrated_action,
+                expected_tool=next_tool,
+                text=model_text,
+            )
+            return narrated_action, ""
+        narrated_not_found = parse_narrated_not_found(
+            model_text,
+            final_direction=next_tool is None,
+        )
+        if narrated_not_found is not None:
+            self.loop.log(
+                "PARSED_NARRATED_ACTION",
+                tool=narrated_not_found,
+                expected_tool="report_not_found",
+                text=model_text,
+            )
+            return narrated_not_found, ""
+        return None
+
     def _inspect(
         self,
         image_path: str,
@@ -225,73 +372,51 @@ Call exactly one supplied tool and do not invent a location."""
             tools=tools,
         )
         self._checkpoint()
-        if calls:
-            call = calls[0]
-            action = tool_name(call)
-            location = self._argument(call, "location")
-            physical_anchors = ("table", "desk", "chair", "laptop", "cable", "cup", "bag")
-            if action == "report_found" and (
-                "image" in location.lower()
-                or not any(anchor in location.lower() for anchor in physical_anchors)
-            ):
-                refined, _ = self.loop._step(
-                    [
-                        {
-                            "role": "system",
-                            "content": "Rewrite visual locations in plain furniture-relative language.",
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Target: {target}. Grounded visual evidence: {visual_evidence}. "
-                                f"Original location wording: {location}. Reply with only a short physical "
-                                "location using a table, chair, laptop, cable, or another nearby object. "
-                                "Never mention the image or camera."
-                            ),
-                        },
-                    ]
-                )
-                location = " ".join(refined.split()).rstrip(".")
-                if "surface" in location.lower():
-                    location = re.sub(r"\bsurface\b", "tabletop", location, flags=re.IGNORECASE)
-            if action == "report_found" and "surface" in location.lower():
-                location = re.sub(r"\bsurface\b", "tabletop", location, flags=re.IGNORECASE)
-            return action, location
-
-        match = re.match(r"^FOUND:\s*(.+)$", model_text, flags=re.IGNORECASE)
-        if match:
-            self.loop.log("PARSED_TEXT_ACTION", tool="report_found", text=model_text)
-            return "report_found", match.group(1).strip()
-        if model_text.upper().startswith("NOT_FOUND"):
-            fallback_action = next_tool or "report_not_found"
-            self.loop.log("PARSED_TEXT_ACTION", tool=fallback_action, text=model_text)
-            return fallback_action, ""
-        plain_action = model_text.strip().lower().strip("` .")
-        if plain_action == next_tool or (next_tool is None and plain_action == "report_not_found"):
-            self.loop.log("PARSED_TEXT_ACTION", tool=plain_action, text=model_text)
-            return plain_action, ""
-        narrated_action = parse_narrated_look_action(model_text, next_tool)
-        if narrated_action is not None:
-            self.loop.log(
-                "PARSED_NARRATED_ACTION",
-                tool=narrated_action,
-                expected_tool=next_tool,
-                text=model_text,
-            )
-            return narrated_action, ""
-        narrated_not_found = parse_narrated_not_found(
+        resolved = self._resolve_decision(
             model_text,
-            final_direction=next_tool is None,
+            calls,
+            next_tool=next_tool,
+            target=target,
+            visual_evidence=visual_evidence,
         )
-        if narrated_not_found is not None:
-            self.loop.log(
-                "PARSED_NARRATED_ACTION",
-                tool=narrated_not_found,
-                expected_tool="report_not_found",
-                text=model_text,
-            )
-            return narrated_not_found, ""
-        raise AgentLoopError(f"Gemma returned no parseable finder action: {model_text!r}")
+        if resolved is not None:
+            return resolved
+
+        valid_miss = next_tool or "report_not_found"
+        retry_prompt = f"""Your previous action response was invalid: {model_text}
+The current direction {direction} has already been inspected.
+If the grounded evidence clearly shows the requested {target}, call report_found with one plain physical location.
+Otherwise call {valid_miss}. That is the only valid search continuation.
+Call exactly one supplied tool. Do not narrate, repeat a direction, or use markdown."""
+        retry_text, retry_calls = self.loop._step(
+            [
+                {"role": "system", "content": f"{AGENT_CORE}\n\n{ELDERLY_PROMPT}"},
+                {"role": "user", "content": retry_prompt},
+            ],
+            tools=tools,
+        )
+        self._checkpoint()
+        self.loop.log(
+            "FINDER_DECISION_RETRY",
+            direction=direction,
+            expected_tool=valid_miss,
+            first_text=model_text,
+            retry_text=retry_text,
+            retry_tool_calls=len(retry_calls),
+        )
+        resolved = self._resolve_decision(
+            retry_text,
+            retry_calls,
+            next_tool=next_tool,
+            target=target,
+            visual_evidence=visual_evidence,
+        )
+        if resolved is not None:
+            return resolved
+        raise AgentLoopError(
+            f"Gemma returned no parseable finder action after retry: {model_text!r}; "
+            f"retry={retry_text!r}"
+        )
 
     def search_live(
         self,
