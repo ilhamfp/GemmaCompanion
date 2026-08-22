@@ -574,3 +574,24 @@ result: PASS Gemma read and assessed a visible scam SMS
 ```
 
 The fixture used a staged, non-private SMS at 1024x576 with large legible text. Runtime remained fully local on the Jetson. A parser/segmentation regression run also exited 0 and confirmed `Is this a scam or not?` routes to fresh visual reasoning.
+
+### JETSON — no-Mac boot unit pre-install audit
+
+Command:
+
+```sh
+cd ~/gemma-companion && systemd-analyze verify deploy/gemma-companion.service; systemctl is-enabled gemma-companion.service; systemctl is-active gemma-companion.service
+```
+
+The unit verifier exited 0. The two unrelated NVIDIA system-unit warnings are pre-existing; the Gemma Companion unit produced no error. Current service state remains deliberately unmodified:
+
+```text
+VERIFY_EXIT=0
+not-found
+inactive
+95eb216
+Mem:           7.3Gi       4.3Gi       140Mi       5.1Mi       3.1Gi       3.0Gi
+/dev/nvme0n1p1  456G   17G  417G   4% /
+```
+
+Available RAM is 3.0 GiB and disk is 417 GiB, safely above the GOAL.md guards. Installation is paused for the required human-authorized command: `sudo ./scripts/install_boot_service.sh`.

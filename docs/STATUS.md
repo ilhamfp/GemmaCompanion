@@ -122,7 +122,7 @@ evidence: |
   result: PASS README, LICENSE, reset, clean assets, and public push
 fallback_taken: none
 commit: 4da493b
-notes: Code shipping is complete and public. M8 remains IN_PROGRESS only for the human-owned demo video and Devpost submission; the dry-run and recording checklist is docs/demo-checklist.md.
+notes: Code shipping is complete and public. The no-Mac boot unit passes `systemd-analyze verify`, but it is not installed (`is-enabled: not-found`, `is-active: inactive`) because GOAL.md requires the human to authorize the one-time sudo command. M8 remains IN_PROGRESS for that installation, the physical power-cycle rehearsal, and the human-owned demo video and Devpost submission; the dry-run and recording checklists are docs/demo-checklist.md and docs/DEMO_FLOW.md.
 
 ## M9 Voice upgrade
 status: DONE
