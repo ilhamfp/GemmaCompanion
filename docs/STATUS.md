@@ -107,5 +107,5 @@ evidence: |
   negative_run: PASS; target=red umbrella; searched=center,left,right,up,down; response=I couldn't find the red umbrella from here; please check its usual place.; log=/home/iputra/gemma-companion/logs/session-19700101-093544-012493.jsonl
   result: PASS requested object found 3/3 out of initial view and honest not-found 1/1
 fallback_taken: Audio-Technica tabletop speaker substituted for glasses at the human's explicit request after physical glasses could not be staged inside the useful camera sweep; a genuinely absent red umbrella supplied the honest not-found test.
-commit: PENDING
+commit: 6b55f17
 notes: The generalized elderly finder retains the same confirmation, systematic search, plain location, uncertainty, and medical-safety behavior. Every positive log contains a Gemma-issued look_left before a grounded speaker detection in the new frame; no accepted run contains CAPTURE_RETRY. The human confirmation of audible speech and physical movement is still required before M7 can be DONE. After the run, 2.8 GiB RAM and 418 GiB disk remained available.
