@@ -25,3 +25,17 @@ evidence: |
 fallback_taken: none
 commit: 08b87f8
 notes: Uses OBSBOT hardware MJPEG through GStreamer and discards four warm-up frames. The first cold-open run took 2.028 s and failed; the immediate acceptance rerun passed. Frame copied to Mac as artifacts/m1-camera.jpg (SHA-256 bc6a3c9ceaf292c113394a1c72e49a993bf3bc021a2fb545627343d7243ec8e0) and visually confirmed as the workspace view.
+
+## M2 PTZ control
+status: DONE
+verified_by: scripts/test_ptz.py
+verified_at: 2026-08-22 11:05 SGT
+evidence: |
+  method: uvc
+  sequence: look_left,capture,look_right,capture,look_center
+  frames: left=/home/iputra/gemma-companion/captures/ptz/capture-21bd82831ee442f6a6d9de25e4b6ef1f.jpg; right=/home/iputra/gemma-companion/captures/ptz/capture-1126905570eb412e956893d519583ea5.jpg
+  mean_pixel_diff: 76.458; threshold: 8.000
+  result: PASS physical PTZ frames differ and camera returned center
+fallback_taken: none
+commit: pending
+notes: Standard UVC pan_absolute/tilt_absolute controls are driven with direct V4L2 ioctls because v4l2-ctl is absent. Movement is clamped to pan +/-60 degrees and tilt +/-30 degrees, safely inside hardware limits. Left/right frames were copied to the Mac and visibly differ.

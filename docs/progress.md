@@ -102,3 +102,29 @@ Exit code: 0. SHA-256: `bc6a3c9ceaf292c113394a1c72e49a993bf3bc021a2fb545627343d7
 Visual description: a laptop fills the left foreground; beyond it are a white desk, large monitor, black chair/bag, small plant, and boxes. This is the expected workspace view.
 
 Current status: M0-M1 DONE. M2 is next.
+
+## M2 PTZ control
+
+### JETSON — verification
+
+Command:
+
+```sh
+cd ~/gemma-companion && ./scripts/test_ptz.py
+```
+
+Exit code: 0
+
+```text
+method: uvc
+sequence: look_left,capture,look_right,capture,look_center
+frames: left=/home/iputra/gemma-companion/captures/ptz/capture-21bd82831ee442f6a6d9de25e4b6ef1f.jpg; right=/home/iputra/gemma-companion/captures/ptz/capture-1126905570eb412e956893d519583ea5.jpg
+mean_pixel_diff: 76.458; threshold: 8.000
+result: PASS physical PTZ frames differ and camera returned center
+```
+
+### MAC — frame inspection
+
+Both frames were copied to `artifacts/`. The left frame is centered on the foreground laptop and far monitor; the right frame shifts across the workspace and adds two people and a window. The measured and visible view change confirms physical movement.
+
+Current status: M0-M2 DONE. M3 is next.
