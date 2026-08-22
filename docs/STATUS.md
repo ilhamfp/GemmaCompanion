@@ -37,5 +37,5 @@ evidence: |
   mean_pixel_diff: 76.458; threshold: 8.000
   result: PASS physical PTZ frames differ and camera returned center
 fallback_taken: none
-commit: pending
+commit: 3ca6e19
 notes: Standard UVC pan_absolute/tilt_absolute controls are driven with direct V4L2 ioctls because v4l2-ctl is absent. Movement is clamped to pan +/-60 degrees and tilt +/-30 degrees, safely inside hardware limits. Left/right frames were copied to the Mac and visibly differ.
