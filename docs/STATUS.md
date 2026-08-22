@@ -52,7 +52,7 @@ evidence: |
   result: PASS 3s record, offline STT, TTS playback, and text mode
 fallback_taken: eSpeak NG TTS because Piper was not installed; its own verification passed and the human reported hearing playback.
 commit: f148b46
-notes: AT-CSP1 is ALSA plughw:3,0. STT is whisper.cpp 1.9.3 with the 75 MiB tiny.en model, fully offline. A separate --text run exited 0. The AT-CSP1 echo-cancels its own playback, so the verifier gives an audible cue and transcribes the human response rather than using self-loopback.
+notes: AT-CSP1 is ALSA plughw:3,0. STT is whisper.cpp 1.9.3 with the 75 MiB tiny.en model, fully offline. A separate --text run exited 0. The AT-CSP1 echo-cancels its own playback, so the verifier gives an audible cue and transcribes the human response rather than using self-loopback. Voice was upgraded in M9; see the M9 Voice upgrade block.
 
 ## M4 Gemma on the Jetson
 status: DONE
@@ -123,3 +123,21 @@ evidence: |
 fallback_taken: none
 commit: 4da493b
 notes: Code shipping is complete and public. M8 remains IN_PROGRESS only for the human-owned demo video and Devpost submission; the dry-run and recording checklist is docs/demo-checklist.md.
+
+## M9 Voice upgrade
+status: DONE
+verified_by: scripts/test_tts.py, scripts/test_audio.py, make demo-akinator
+verified_at: 2026-08-22 13:45 SGT
+evidence: |
+  engine: kokoro-onnx 0.6.1; voice: af_heart; sample_rate: 24000; provider: CPUExecutionProvider
+  load_seconds: 2.482
+  first_audio_seconds: 1.320; limit: <1.5
+  total_seconds: 2.905; limit: <3.0
+  cached_play_seconds: 0.001; limit: <0.2
+  free_available_gib: 3.068; limit: >2.0; tts_resident_mib: 419.5; limit: <=800
+  test_wav: /home/iputra/gemma-companion/artifacts/tts-sample.wav
+  result: PASS natural resident CPU TTS meets warm, cached, and memory limits
+engine: kokoro-onnx af_heart 1.0
+fallback_taken: none
+commit: e6e96f2
+notes: The human audition choice was verbatim: `af_heart, 1.0 is good, let's do it`. With Gemma running, 3.068 GiB was available after load and the resident TTS process used 419.5 MiB. The current keyboard text fallback exited 0 and unchanged offline STT re-transcribed the accepted live AT-CSP1 recording as `Gemma, please find my glasses now.` The human confirmed the new playback was audible: `let's just assume it's working, i hear it the first time`. The accepted Akinator game reported `look_announcement_overlap: PASS` for `Let me look over there.` during Gemma's `look_left` move.

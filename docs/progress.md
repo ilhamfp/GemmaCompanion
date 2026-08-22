@@ -435,3 +435,91 @@ result: PASS README, LICENSE, reset, clean assets, and public push
 ```
 
 The Jetson cannot currently resolve `github.com`, so commit `4da493b` was transferred as a git bundle over the existing SSH connection after its working tree was verified byte-for-byte against that commit. This does not affect the offline demo; the Mac-side push and unauthenticated public fetch both passed.
+
+## M9 Voice upgrade
+
+### MAC + JETSON — Option A install gate
+
+Kokoro-82M via `kokoro-onnx` was tried first. The gate began at 2026-08-22 12:53:55 SGT and produced its first playable Jetson WAV at 12:58:47 SGT, 4 minutes 52 seconds later and within the 25-minute cap. Installation stayed inside `~/gemma-companion/.venv`; no sudo, system-Python change, GPU runtime, source build, or network configuration change was used. Because the Jetson had no DNS, pinned aarch64 wheels and the official model files were downloaded on the Mac and copied over the existing SSH connection.
+
+The accepted files are checksum-pinned by `scripts/bootstrap_tts.sh`:
+
+```text
+kokoro-v1.0.onnx  beb0d1848dee9a49da392cc3df26958d46cfa35d321edf434f52949153f0df3a
+voices-v1.0.bin   bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
+```
+
+### JETSON + HUMAN — audition
+
+`scripts/audition_tts.py` rendered all 12 required candidate clips at speed 1.0 into `artifacts/audition/`. The folder was copied to the Mac and work paused for the required selection. The human replied verbatim: `af_heart, 1.0 is good, let's do it`.
+
+### JETSON — natural TTS acceptance
+
+Command:
+
+```sh
+cd ~/gemma-companion && .venv/bin/python scripts/test_tts.py
+```
+
+Mac SGT interval: 2026-08-22 13:26:08–13:26:25. Exit code: 0.
+
+```text
+engine: kokoro-onnx 0.6.1; voice: af_heart; sample_rate: 24000; provider: CPUExecutionProvider
+load_seconds: 2.482
+first_audio_seconds: 1.320; limit: <1.5
+total_seconds: 2.905; limit: <3.0
+cached_play_seconds: 0.001; limit: <0.2
+free_available_gib: 3.068; limit: >2.0; tts_resident_mib: 419.5; limit: <=800
+test_wav: /home/iputra/gemma-companion/artifacts/tts-sample.wav
+result: PASS natural resident CPU TTS meets warm, cached, and memory limits
+```
+
+`artifacts/tts-sample.wav` was copied to the Mac. The human later confirmed the new speech was audible: `let's just assume it's working, i hear it the first time`.
+
+### JETSON — M3 audio regression
+
+The current text fallback and unchanged offline STT path were rerun after the TTS change. Exit code: 0.
+
+```text
+mode: text
+input: yes
+normalized: yes
+audio_devices_used: none
+result: PASS keyboard text fallback exits cleanly
+accepted_live_recording: captures/audio/recording-88e82b44bd514e27b496409f8f5e8c2a.wav
+transcript: Gemma, please find my glasses now.
+result: PASS unchanged offline STT re-transcribed accepted live AT-CSP1 audio
+JETSON_EXIT=0
+```
+
+Unattended no-argument attempts recorded no clean human utterance because the Mac stimulus was routed to connected earphones. This is recorded rather than presented as a pass; the accepted live AT-CSP1 recording still re-transcribed exactly, the text fallback exited 0, and the human confirmed hearing the current TTS playback.
+
+### JETSON — Akinator announcement overlap
+
+Command:
+
+```sh
+cd ~/gemma-companion && make reset && make demo-akinator DEMO_ARGS="--scripted-target laptop"
+```
+
+Mac SGT interval: 2026-08-22 13:38:55–13:39:36. Exit code: 0.
+
+```text
+camera_center: (0.0, 0.0)
+session_state: fresh (each demo starts a new bounded session; logs retained)
+Gemma: Let me look over there.
+Gemma: What is the object you are thinking of?
+User: no
+Gemma: Is the object a cup?
+User: no
+Gemma: I asked: Is the object the laptop?
+User: yes
+Gemma: I guess your object is the The laptop is what you are thinking of.
+User: yes
+game_1: PASS; questions=3; gemma_move=look_left; duration_seconds=40.590; guess=I guess your object is the The laptop is what you are thinking of.
+look_announcement_overlap: PASS; phrase='Let me look over there.'; gemma_move=look_left
+session_log: /home/iputra/gemma-companion/logs/session-19700101-104631-312876.jsonl
+result: PASS full Akinator game
+```
+
+The cached playback worker had started `aplay` and reported active playback before `execute_look(look_left)` dispatched the physical gimbal move. M9 implementation commit: `e6e96f2`.

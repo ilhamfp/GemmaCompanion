@@ -39,7 +39,7 @@ make demo-akinator
 ```
 
 - Think of the laptop.
-- Keep the gimbal in frame when Gemma says its short look line and moves.
+- Keep the gimbal in frame when Gemma says “Let me look over there.” and moves; the cached natural-voice line should already be playing as the camera starts.
 - Answer only `yes`, `no`, or `not sure`.
 - End immediately after the correct guess.
 
@@ -65,7 +65,7 @@ make demo-elderly
   tail -n 12 "$(ls -t logs/session-*.jsonl | head -1)"
   ```
 
-- Point out `GEMMA_LOOK_DECISION`, `LOOK`, the fresh `OBSERVE`, and `FINDER_RESULT`/`GAME_RESULT`.
+- Point out `GEMMA_LOOK_DECISION`, `LOOK_ANNOUNCEMENT_OVERLAP`, `LOOK`, the fresh `OBSERVE`, and `FINDER_RESULT`/`GAME_RESULT`.
 - Say: “Gemma 4 E2B Q4_0 runs locally on the 8 GB Jetson; no image or audio leaves the device.”
 
 ## Submission metadata
