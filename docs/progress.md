@@ -259,3 +259,23 @@ result: PASS two consecutive full Akinator games with Gemma-initiated physical c
 Both accepted logs contain an independent `GEMMA_LOOK_DECISION` for `look_left`, a physical `LOOK`, and `GAME_RESULT: PASS`. There were no capture retries in either accepted game. The run used live AT-CSP1 speech output and scripted text answers. `free -h` afterward reported 4.3 GiB used and 3.0 GiB available; disk had 418 GiB free.
 
 Current status: M6 automated verification passed; human audible/gimbal confirmation is required before M6 can be DONE. M7 has not started.
+
+### JETSON — requested M6 replay
+
+Command:
+
+```sh
+cd ~/gemma-companion && make demo-akinator DEMO_ARGS='--text --scripted-target laptop --games 2'
+```
+
+Exit code: 0
+
+```text
+game_1: PASS; questions=2; gemma_move=look_left; duration_seconds=27.903; guess=I guess your object is the laptop.
+game_2: PASS; questions=1; gemma_move=look_left; duration_seconds=21.759; guess=I guess your object is the laptop.
+consecutive_games: 2/2 PASS; text_fallback: yes; physical_moves: 2
+session_logs: /home/iputra/gemma-companion/logs/session-19700101-090946-763935.jsonl; /home/iputra/gemma-companion/logs/session-19700101-091014-667650.jsonl
+result: PASS two consecutive full Akinator games with Gemma-initiated physical camera moves
+```
+
+Both replay logs contain `GEMMA_LOOK_DECISION: look_left` and `GAME_RESULT: PASS`; neither contains `CAPTURE_RETRY`. Afterward, 2.9 GiB RAM and 418 GiB disk remained available. Human confirmation remains the final M6 gate.
