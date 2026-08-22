@@ -37,6 +37,24 @@ If a phone or message is shown, read only text that is genuinely legible.
 For a suspected scam, explain the concrete warning signs, avoid claiming certainty when text is unclear,
 and recommend not clicking links or sharing codes and verifying the sender through an independent trusted channel.
 Reply in two or three short spoken sentences with no markdown."""
+VISUAL_TARGET_MODIFIERS = {
+    "black",
+    "blue",
+    "bright",
+    "dark",
+    "green",
+    "large",
+    "light",
+    "oval",
+    "rectangular",
+    "red",
+    "round",
+    "rounded",
+    "small",
+    "white",
+    "wireless",
+    "yellow",
+}
 
 
 def available_memory_bytes() -> int:
@@ -44,6 +62,18 @@ def available_memory_bytes() -> int:
         if line.startswith("MemAvailable:"):
             return int(line.split()[1]) * 1024
     raise RuntimeError("MemAvailable is unavailable")
+
+
+def preserves_target_identity(original: str, candidate: str) -> bool:
+    """Reject visual rewrites that discard the named product or object type."""
+
+    identity_tokens = {
+        word
+        for word in re.findall(r"[a-z0-9]+", original.casefold())
+        if len(word) >= 3 and word not in VISUAL_TARGET_MODIFIERS
+    }
+    candidate_tokens = set(re.findall(r"[a-z0-9]+", candidate.casefold()))
+    return bool(candidate) and len(candidate) <= 160 and identity_tokens <= candidate_tokens
 
 
 @dataclass(frozen=True)
@@ -558,7 +588,41 @@ class CompanionSession:
         token: int,
         started: float,
     ) -> CompanionResult:
-        self._log("FINDER_HANDOFF", turn=token, request=request, target=target)
+        original_target = target
+        try:
+            enriched, _ = self.gemma.step(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Rewrite an object name as a concise visual search phrase. Preserve its "
+                            "exact product identity and object type. Add only stable, commonly known "
+                            "visual traits such as size, shape, color, and form. Reply with the phrase "
+                            "only, without markdown or a sentence."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"User request: {request}\nObject name: {target}",
+                    },
+                ]
+            )
+            if not self._is_current(token):
+                raise FinderCancelled("a newer user turn cancelled target enrichment")
+            candidate = " ".join(enriched.split()).strip(" `\"'.")
+            if preserves_target_identity(target, candidate):
+                target = candidate
+        except FinderCancelled:
+            raise
+        except Exception as exc:
+            self._log("FINDER_TARGET_ENRICHMENT_FALLBACK", turn=token, error=str(exc))
+        self._log(
+            "FINDER_HANDOFF",
+            turn=token,
+            request=request,
+            original_target=original_target,
+            target=target,
+        )
         finder = ElderlyFinder(
             speech=False,
             log_dir=self.log_path.parent,

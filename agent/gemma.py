@@ -37,7 +37,8 @@ class GemmaClient:
             method="GET" if body is None else "POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=180) as response:
+            timeout_seconds = float(os.environ.get("GEMMA_REQUEST_TIMEOUT_SECONDS", "30"))
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise GemmaError(f"llama.cpp request failed at {route}: {exc}") from exc

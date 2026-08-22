@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from PIL import Image, ImageOps
+
 from agent.gemma import GemmaClient
 from agent.loop import AgentLoop, AgentLoopError
 from agent.prompts import AGENT_CORE, ELDERLY_PROMPT
@@ -51,6 +53,27 @@ MEDICAL_WORDS = {
     "diagnose",
     "doctor",
 }
+VISUAL_CLASSIFIER_PROMPT = (
+    "You are a visual classifier. Inspect the attached pixels now. "
+    "Never state plans or future actions."
+)
+TARGET_COLORS = {
+    "black",
+    "blue",
+    "brown",
+    "gold",
+    "gray",
+    "green",
+    "grey",
+    "magenta",
+    "orange",
+    "pink",
+    "purple",
+    "red",
+    "silver",
+    "white",
+    "yellow",
+}
 
 
 def is_medical_request(text: str) -> bool:
@@ -59,6 +82,49 @@ def is_medical_request(text: str) -> bool:
 
 def medical_refusal() -> str:
     return "I can't help with medical advice; please ask a caregiver or doctor."
+
+
+def detail_candidate_is_consistent(target: str, independent_evidence: str) -> bool:
+    """Require a target-blind detail observation to preserve explicit color evidence."""
+
+    if "NO_CANDIDATE" in independent_evidence.upper():
+        return False
+    target_words = set(re.findall(r"[a-z]+", target.casefold()))
+    evidence_words = set(re.findall(r"[a-z]+", independent_evidence.casefold()))
+    required_colors = target_words & TARGET_COLORS
+    return not required_colors or bool(required_colors & evidence_words)
+
+
+def create_edge_detail_sheet(image_path: str | Path) -> str:
+    """Magnify the four overlapping edge quadrants of one physical observation."""
+
+    source_path = Path(image_path)
+    output_path = source_path.with_name(f"{source_path.stem}-edge-detail.jpg")
+    temporary_path = output_path.with_name(f"{output_path.stem}.tmp.jpg")
+    with Image.open(source_path) as source:
+        frame = source.convert("RGB")
+        width, height = frame.size
+        edge_width = max(1, round(width * 0.32))
+        edge_height = max(1, round(height * 0.68))
+        boxes = (
+            (0, 0, edge_width, edge_height),
+            (width - edge_width, 0, width, edge_height),
+            (0, height - edge_height, edge_width, height),
+            (width - edge_width, height - edge_height, width, height),
+        )
+        sheet = Image.new("RGB", (1024, 576))
+        for index, box in enumerate(boxes):
+            detail = ImageOps.fit(frame.crop(box), (512, 288))
+            sheet.paste(detail, ((index % 2) * 512, (index // 2) * 288))
+        try:
+            sheet.save(temporary_path, format="JPEG", quality=92)
+            if temporary_path.stat().st_size < 1024:
+                raise OSError("generated edge-detail JPEG is unexpectedly small")
+            temporary_path.replace(output_path)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
+    return str(output_path)
 
 
 @dataclass(frozen=True)
@@ -102,6 +168,17 @@ def parse_narrated_not_found(model_text: str, *, final_direction: bool) -> str |
         flags=re.IGNORECASE,
     )
     return "report_not_found" if negative_result else None
+
+
+def parse_trailing_search_action(model_text: str, expected_tool: str) -> str | None:
+    """Accept an expected tool name serialized alone on the final response line."""
+
+    trailing = re.search(
+        rf"(?:^|\n)\s*{re.escape(expected_tool)}\s*$",
+        model_text,
+        flags=re.IGNORECASE,
+    )
+    return expected_tool if trailing else None
 
 
 def parse_textual_report_found(model_text: str) -> str | None:
@@ -293,6 +370,11 @@ class ElderlyFinder:
         if plain_action == next_tool or (next_tool is None and plain_action == "report_not_found"):
             self.loop.log("PARSED_TEXT_ACTION", tool=plain_action, text=model_text)
             return plain_action, ""
+        expected_action = next_tool or "report_not_found"
+        trailing_action = parse_trailing_search_action(model_text, expected_action)
+        if trailing_action is not None:
+            self.loop.log("PARSED_TEXT_ACTION", tool=trailing_action, text=model_text)
+            return trailing_action, ""
         narrated_action = parse_narrated_look_action(model_text, next_tool)
         if narrated_action is not None:
             self.loop.log(
@@ -316,52 +398,24 @@ class ElderlyFinder:
             return narrated_not_found, ""
         return None
 
-    def _inspect(
+    def _decide_from_evidence(
         self,
-        image_path: str,
+        *,
+        visual_evidence: str,
         direction: str,
+        checked: str,
         next_tool: str | None,
         target: str,
-    ) -> tuple[str, str]:
-        self._checkpoint()
-        checked = ", ".join(
-            item.direction for item in self.loop.memory.observations
-        ) or "none"
-        if next_tool:
-            continuation = f"If the requested object is not clearly visible, call {next_tool} to continue the systematic search."
-            tools = [REPORT_FOUND_SCHEMA, look_schema(next_tool)]
-        else:
-            continuation = "This is the final direction. If the requested object is not clearly visible, call report_not_found."
-            tools = [REPORT_FOUND_SCHEMA, REPORT_NOT_FOUND_SCHEMA]
-        vision_prompt = f"""Inspect only this fresh image for the user's {target}.
-Current physical camera direction: {direction}.
-Pay attention to the target's stated color, brand, shape, and object type.
-Use ordinary visual knowledge to recognize common products by shape even when logos are unreadable.
-For wireless earbuds, the small charging case counts as the target unless the user asks for one loose earbud.
-Do not substitute a merely similar object or infer one outside the frame.
-Brand text may be unreadable, so describe any candidate matching the target's physical appearance and type.
-In one grounded sentence, state what matching candidate is visible and locate it relative to a table, chair, laptop, cable, or other physical object.
-Never use image-relative wording such as left side or right side. If nothing matches, state that no matching object is visible."""
-        visual_evidence, _ = self.loop._step(
-            [
-                {"role": "system", "content": f"{AGENT_CORE}\n\n{ELDERLY_PROMPT}"},
-                {"role": "user", "content": vision_prompt},
-            ],
-            [image_path],
-        )
-        self._checkpoint()
-        self.loop.log(
-            "VISUAL_EVIDENCE",
-            direction=direction,
-            target=target,
-            text=visual_evidence,
-        )
-
+        continuation: str,
+        tools: list[dict],
+        evidence_kind: str,
+        allow_unparseable: bool = False,
+    ) -> tuple[str, str] | None:
         decision_prompt = f"""Request: find the user's {target}.
 Current direction: {direction}. Previously inspected: {checked}.
-Grounded evidence from your just-completed image inspection: {visual_evidence}
+Grounded evidence from your just-completed {evidence_kind}: {visual_evidence}
 Report the requested object only if that evidence clearly describes a candidate matching its physical appearance and type.
-If found, call report_found with one simple physical location naming nearby furniture or objects; never say a side of the image.
+If found, call report_found with one simple physical location naming nearby furniture or objects; never say a side of the image or a detail panel.
 {continuation}
 Call exactly one supplied tool and do not invent a location."""
         model_text, calls = self.loop._step(
@@ -399,6 +453,7 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
         self.loop.log(
             "FINDER_DECISION_RETRY",
             direction=direction,
+            evidence_kind=evidence_kind,
             expected_tool=valid_miss,
             first_text=model_text,
             retry_text=retry_text,
@@ -413,10 +468,150 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
         )
         if resolved is not None:
             return resolved
+        if allow_unparseable:
+            self.loop.log(
+                "FINDER_OPTIONAL_DECISION_INVALID",
+                direction=direction,
+                evidence_kind=evidence_kind,
+                first_text=model_text,
+                retry_text=retry_text,
+            )
+            return None
         raise AgentLoopError(
             f"Gemma returned no parseable finder action after retry: {model_text!r}; "
             f"retry={retry_text!r}"
         )
+
+    def _inspect(
+        self,
+        image_path: str,
+        direction: str,
+        next_tool: str | None,
+        target: str,
+    ) -> tuple[str, str]:
+        self._checkpoint()
+        checked = ", ".join(
+            item.direction for item in self.loop.memory.observations
+        ) or "none"
+        if next_tool:
+            continuation = f"If the requested object is not clearly visible, call {next_tool} to continue the systematic search."
+            tools = [REPORT_FOUND_SCHEMA, look_schema(next_tool)]
+        else:
+            continuation = "This is the final direction. If the requested object is not clearly visible, call report_not_found."
+            tools = [REPORT_FOUND_SCHEMA, REPORT_NOT_FOUND_SCHEMA]
+        vision_prompt = f"""Target: {target}.
+Inspect only this fresh {direction} camera frame. A partly clipped target counts, and unreadable brand text does not rule out a physically matching common product.
+Do not substitute a merely similar object or infer anything outside the frame.
+Answer exactly DETECTED: followed by its physical location near a table, chair, laptop, cable, or other nearby object, or ABSENT if no matching target is visible."""
+        visual_evidence, _ = self.loop._step(
+            [
+                {"role": "system", "content": VISUAL_CLASSIFIER_PROMPT},
+                {"role": "user", "content": vision_prompt},
+            ],
+            [image_path],
+        )
+        self._checkpoint()
+        self.loop.log(
+            "VISUAL_EVIDENCE",
+            direction=direction,
+            target=target,
+            text=visual_evidence,
+        )
+
+        wide_decision = self._decide_from_evidence(
+            visual_evidence=visual_evidence,
+            direction=direction,
+            checked=checked,
+            next_tool=next_tool,
+            target=target,
+            continuation=continuation,
+            tools=tools,
+            evidence_kind="wide-frame inspection",
+        )
+        if wide_decision[0] == "report_found":
+            return wide_decision
+
+        try:
+            detail_path = create_edge_detail_sheet(image_path)
+        except OSError as exc:
+            self.loop.log(
+                "EDGE_DETAIL_FALLBACK",
+                direction=direction,
+                source_image=image_path,
+                error=str(exc),
+            )
+            return wide_decision
+        self.loop.log(
+            "EDGE_DETAIL_CREATED",
+            direction=direction,
+            source_image=image_path,
+            detail_image=detail_path,
+        )
+        detail_prompt = f"""Target: a {target}. Answer exactly DETECTED: followed by its physical location near a table or laptop, or ABSENT if no matching target is visible. A partially clipped target counts."""
+        detail_evidence, _ = self.loop._step(
+            [
+                {"role": "system", "content": VISUAL_CLASSIFIER_PROMPT},
+                {"role": "user", "content": detail_prompt},
+            ],
+            [detail_path],
+        )
+        self._checkpoint()
+        self.loop.log(
+            "EDGE_DETAIL_EVIDENCE",
+            direction=direction,
+            target=target,
+            source_image=image_path,
+            detail_image=detail_path,
+            text=detail_evidence,
+        )
+        if detail_evidence.upper().startswith("DETECTED:"):
+            independent_evidence, _ = self.loop._step(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a visual verifier. Inspect the attached pixels now. Report "
+                            "only directly visible physical traits and never repeat a prior label."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Without being told the search target, describe the most prominent "
+                            "small object visible near the table or laptop. State its observed "
+                            "color, shape, and object type. If no small object is clearly visible, "
+                            "reply NO_CANDIDATE."
+                        ),
+                    },
+                ],
+                [detail_path],
+            )
+            self._checkpoint()
+            consistent = detail_candidate_is_consistent(target, independent_evidence)
+            self.loop.log(
+                "EDGE_DETAIL_INDEPENDENT_CHECK",
+                direction=direction,
+                target=target,
+                target_aware_evidence=detail_evidence,
+                independent_evidence=independent_evidence,
+                consistent=consistent,
+            )
+            if not consistent:
+                return wide_decision
+        detail_decision = self._decide_from_evidence(
+            visual_evidence=detail_evidence,
+            direction=direction,
+            checked=checked,
+            next_tool=next_tool,
+            target=target,
+            continuation=continuation,
+            tools=tools,
+            evidence_kind="magnified edge-detail inspection",
+            allow_unparseable=True,
+        )
+        if detail_decision is not None and detail_decision[0] == "report_found":
+            return detail_decision
+        return wide_decision
 
     def search_live(
         self,

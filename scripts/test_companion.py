@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import tempfile
 import time
 from array import array
 from pathlib import Path
@@ -22,12 +23,17 @@ from demos.companion import (  # noqa: E402
     CompanionSession,
     available_memory_bytes,
     parse_intent,
+    preserves_target_identity,
 )
 from demos.elderly import (  # noqa: E402
+    create_edge_detail_sheet,
+    detail_candidate_is_consistent,
     parse_narrated_look_action,
     parse_narrated_not_found,
     parse_textual_report_found,
+    parse_trailing_search_action,
 )
+from PIL import Image  # noqa: E402
 
 
 def _pcm(level: int, samples: int) -> bytes:
@@ -127,6 +133,48 @@ def _test_narrated_finder_actions() -> None:
         raise AssertionError(f"textual report_found parsed as {parsed_location!r}")
     if parse_textual_report_found("report_found{location:nearby}") is not None:
         raise AssertionError("finder accepted an ungrounded textual report_found")
+    trailing = "I understand. I will search now.\nreport_not_found"
+    if parse_trailing_search_action(trailing, "report_not_found") != "report_not_found":
+        raise AssertionError("finder rejected an expected trailing action token")
+    if parse_trailing_search_action(trailing, "look_right") is not None:
+        raise AssertionError("finder accepted a trailing action outside the expected search step")
+
+
+def _test_edge_detail_sheet() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        source = Path(directory) / "frame.jpg"
+        Image.new("RGB", (1280, 720), "black").save(source)
+        detail = Path(create_edge_detail_sheet(source))
+        if not detail.is_file():
+            raise AssertionError("edge-detail sheet was not created")
+        with Image.open(detail) as rendered:
+            if rendered.size != (1024, 576):
+                raise AssertionError(f"edge-detail sheet size was {rendered.size!r}")
+
+
+def _test_target_identity() -> None:
+    original = "small white Apple AirPods wireless-earbud charging case"
+    if not preserves_target_identity(
+        original, "small white Apple AirPods wireless-earbud charging case with rounded edges"
+    ):
+        raise AssertionError("identity-preserving AirPods visual target was rejected")
+    if preserves_target_identity(original, "small white rectangular charging case with rounded edges"):
+        raise AssertionError("visual target was allowed to discard Apple AirPods identity")
+
+
+def _test_detail_candidate_consistency() -> None:
+    if not detail_candidate_is_consistent(
+        "small white Apple AirPods charging case",
+        "A small white smooth curved object is visible near the laptop.",
+    ):
+        raise AssertionError("matching independent color evidence was rejected")
+    if detail_candidate_is_consistent(
+        "bright magenta stapler",
+        "A small white rectangular object is visible near the table.",
+    ):
+        raise AssertionError("conflicting independent color evidence was accepted")
+    if detail_candidate_is_consistent("smartphone", "NO_CANDIDATE"):
+        raise AssertionError("detail search accepted an independent no-candidate result")
 
 
 def main() -> int:
@@ -137,6 +185,9 @@ def main() -> int:
     segment_seconds, peak_rms = _test_parser_and_segmenter()
     _test_latest_turn_wins()
     _test_narrated_finder_actions()
+    _test_edge_detail_sheet()
+    _test_target_identity()
+    _test_detail_candidate_consistency()
     print(
         f"parser_segmenter: PASS; segment_seconds={segment_seconds:.3f}; "
         f"peak_rms={peak_rms:.0f}"
@@ -146,6 +197,9 @@ def main() -> int:
         "finder_narration: PASS; expected look and final not-found accepted; "
         "premature or mismatched actions rejected"
     )
+    print("edge_detail_sheet: PASS; four overlapping edge quadrants magnified")
+    print("target_identity: PASS; product name and object type cannot be discarded")
+    print("detail_consistency: PASS; independent evidence rejects color conflicts")
     if args.unit_only:
         print("result: PASS pure companion routing and audio segmentation")
         return 0
