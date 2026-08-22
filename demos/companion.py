@@ -19,6 +19,7 @@ from camera.capture import capture_image
 from camera.obsbot import look_center, look_down, look_left, look_right, look_up
 
 MIN_AVAILABLE_BYTES = 500 * 1024 * 1024
+READY_CUE = "Hey, Gemma here!"
 VISION_PROMPT = """Describe only what is clearly visible in this fresh camera image.
 Use one or two short spoken sentences. Name the main concrete objects and their useful physical locations.
 Do not mention pixels, the image, or anything outside the view. Do not invent uncertain details."""
@@ -199,7 +200,7 @@ class CompanionSession:
         if announce_scene:
             self._spawn(self._announce_ready, token)
         else:
-            self._respond("I'm ready. Unmute me whenever you want to talk.", token)
+            self._respond(READY_CUE, token)
         self._log("COMPANION_START", turn=token, microphone=self.microphone_enabled)
 
     def stop(self) -> None:
@@ -356,18 +357,21 @@ class CompanionSession:
                     },
                     {
                         "role": "user",
-                        "content": (
-                            "Name one or two main objects clearly visible. Begin exactly: "
-                            "I'm ready. I can see"
-                        ),
+                        "content": "Name one or two main objects clearly visible.",
                     },
                 ],
                 [image_path],
             )
-            response = text if text.casefold().startswith("i'm ready") else f"I'm ready. {text}"
-            self._log("BOOT_OBSERVE", turn=token, image_path=image_path, response=response)
+            response = READY_CUE
+            self._log(
+                "BOOT_OBSERVE",
+                turn=token,
+                image_path=image_path,
+                scene_summary=" ".join(text.split()),
+                response=response,
+            )
         except Exception as exc:
-            response = "I'm ready. Unmute me whenever you want to talk."
+            response = "Gemma here, but my vision isn't ready yet."
             self._log("BOOT_OBSERVE_FALLBACK", turn=token, error=str(exc))
         self._respond(response, token)
 

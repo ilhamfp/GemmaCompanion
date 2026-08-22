@@ -85,7 +85,7 @@ For the continuous, tactile companion session, keep the AT-CSP1 microphone muted
 make companion
 ```
 
-Once Gemma says `I'm ready`, unmute, speak, and mute again. Voice onset interrupts any current reply; commands such as `look left`, `what do you see?`, and `look right` remain available throughout one persistent session. See [`docs/LIVE_COMPANION.md`](docs/LIVE_COMPANION.md) for the one-time boot-service installation and the exact no-Mac power-on demo.
+Once Gemma says `Hey, Gemma here!`, unmute, speak, and mute again. That exact greeting is emitted only after the camera has centered, a fresh frame has been inspected, and continuous capture is live. Voice onset interrupts any current reply; commands such as `look left`, `what do you see?`, and `look right` remain available throughout one persistent session. See [`docs/LIVE_COMPANION.md`](docs/LIVE_COMPANION.md) for the one-time boot-service installation and the exact no-Mac power-on demo.
 
 The microphone PCM stream remains open so physical unmute can be detected immediately, but raw audio is not retained. Only a detected utterance becomes a temporary WAV for local Whisper, and that file is deleted after transcription.
 

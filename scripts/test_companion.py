@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 from audio.continuous import VoiceSegmenter  # noqa: E402
 from demos.companion import (  # noqa: E402
     MIN_AVAILABLE_BYTES,
+    READY_CUE,
     CompanionResult,
     CompanionSession,
     available_memory_bytes,
@@ -97,7 +98,7 @@ def main() -> int:
         boot_deadline = time.monotonic() + 30
         while session.last_result is None and time.monotonic() < boot_deadline:
             time.sleep(0.05)
-        if session.last_result is None or not session.last_result.response.startswith("I'm ready"):
+        if session.last_result is None or session.last_result.response != READY_CUE:
             raise AssertionError("fresh boot observation did not produce the readiness cue")
         boot_seconds = time.monotonic() - boot_started
 
@@ -126,7 +127,7 @@ def main() -> int:
     finally:
         session.stop()
 
-    print(f"boot_readiness: PASS; fresh_scene_seconds={boot_seconds:.3f}; cue=I'm ready")
+    print(f"boot_readiness: PASS; fresh_scene_seconds={boot_seconds:.3f}; cue={READY_CUE}")
     print(
         "direct_moves: PASS; sequence=look_left,look_right,look_center; "
         f"max_latency_seconds={max_move:.3f}"

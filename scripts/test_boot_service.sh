@@ -14,8 +14,8 @@ for _ in $(seq 1 240); do
   }
   latest_log=$(ls -t "$repo_root"/logs/companion-*.jsonl 2>/dev/null | head -1 || true)
   if [[ -n "$latest_log" ]] \
-    && grep -Eq '"action": "BOOT_OBSERVE(_FALLBACK)?"' "$latest_log" \
-    && grep -q '"response": "I.m ready' "$latest_log" \
+    && grep -q '"action": "BOOT_OBSERVE"' "$latest_log" \
+    && grep -Fq '"response": "Hey, Gemma here!"' "$latest_log" \
     && python3 - <<'PY'
 import urllib.request
 for endpoint in ("http://127.0.0.1:11434/props", "http://127.0.0.1:8178/health"):

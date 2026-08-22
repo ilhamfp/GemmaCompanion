@@ -23,7 +23,7 @@ Verify the installed service:
 2. Leave the AT-CSP1 microphone physically muted.
 3. Apply power and wait. Ubuntu, the local Gemma server, the resident Whisper server, and the companion start automatically; no login, Mac, Wi-Fi, or keyboard is required.
 4. OBSBOT centers and captures one fresh still.
-5. Readiness is audible: Gemma says `I'm ready` and briefly describes what the centered camera can see. This is the cue that vision, speech, and continuous capture are all live.
+5. Readiness is audible: Gemma says exactly `Hey, Gemma here!` after silently inspecting the centered fresh frame. This is the cue that vision, speech, and continuous capture are all live.
 6. Unmute, speak one request, then mute. The muted return closes the utterance.
 
 Cold-boot readiness can take roughly one to two minutes. Do not begin speaking until the audible readiness sentence.
@@ -54,7 +54,7 @@ To interrupt, do not wait for Gemma to finish. Unmute while it is speaking, say 
 ## Recommended live-demo sequence
 
 1. Power on with the mic muted and both USB devices attached.
-2. Film the OBSBOT centering and the contextual `I'm ready` sentence.
+2. Film the OBSBOT centering and the `Hey, Gemma here!` readiness greeting.
 3. Unmute, say `Look left`, and mute. Show the immediate physical movement.
 4. Unmute, ask `What do you see?`, and mute. Capture the fresh grounded answer.
 5. While Gemma is still speaking, unmute, say `Look right`, and mute. Its voice should stop and the OBSBOT should move right.
