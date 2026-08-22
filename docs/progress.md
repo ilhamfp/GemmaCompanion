@@ -181,3 +181,29 @@ result: PASS 3s record, offline STT, TTS playback, and text mode
 The human reported hearing the AT-CSP1 playback in chat. A second `--text --text-input "yes, please"` invocation after the hardware run also exited 0.
 
 Current status: M0-M2 DONE; M3 FALLBACK (counts as DONE). M4 is next.
+
+## M4 Gemma on the Jetson
+
+### JETSON — rejected generic CUDA runtime attempt
+
+The generic ARM64 CUDA 13 backend detected the Orin GPU but showed 0% GR3D activity. A warm-server text response took 42.98 seconds at 0.04 generated tokens/s, so it was not accepted. The official JetPack 6 backend bundled with the same llama.cpp distribution was selected and showed GPU-backed inference.
+
+### JETSON — accepted verification
+
+Command:
+
+```sh
+cd ~/gemma-companion && ./scripts/test_gemma.py
+```
+
+Exit code: 0
+
+```text
+model: Gemma 4 E2B; tag: gemma4:e2b-it-qat; quantization: Q4_0; runtime: llama.cpp b1-9d77fa172 CUDA jetpack6
+text_to_text: PASS; latency_seconds: 0.306; response: GEMMA_READY
+image_to_text: PASS; latency_seconds: 2.099; response: The image displays a laptop, a person, and a chair.
+tool_call: PASS; latency_seconds: 0.550; parsed: look_right
+free_h_after_load: Mem:           7.3Gi       4.0Gi       135Mi       5.2Mi       3.4Gi       3.3Gi; result: PASS Gemma text, vision, tool call, latency, and RAM headroom
+```
+
+Current status: M0-M2 and M4 DONE; M3 FALLBACK (counts as DONE). M5 is next.

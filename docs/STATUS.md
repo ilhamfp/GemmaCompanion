@@ -53,3 +53,17 @@ evidence: |
 fallback_taken: eSpeak NG TTS because Piper was not installed; its own verification passed and the human reported hearing playback.
 commit: f148b46
 notes: AT-CSP1 is ALSA plughw:3,0. STT is whisper.cpp 1.9.3 with the 75 MiB tiny.en model, fully offline. A separate --text run exited 0. The AT-CSP1 echo-cancels its own playback, so the verifier gives an audible cue and transcribes the human response rather than using self-loopback.
+
+## M4 Gemma on the Jetson
+status: DONE
+verified_by: scripts/test_gemma.py
+verified_at: 2026-08-22 11:38 SGT
+evidence: |
+  model: Gemma 4 E2B; tag: gemma4:e2b-it-qat; quantization: Q4_0; runtime: llama.cpp b1-9d77fa172 CUDA jetpack6
+  text_to_text: PASS; latency_seconds: 0.306; response: GEMMA_READY
+  image_to_text: PASS; latency_seconds: 2.099; response: The image displays a laptop, a person, and a chair.
+  tool_call: PASS; latency_seconds: 0.550; parsed: look_right
+  free_h_after_load: Mem:           7.3Gi       4.0Gi       135Mi       5.2Mi       3.4Gi       3.3Gi; result: PASS Gemma text, vision, tool call, latency, and RAM headroom
+fallback_taken: none
+commit: PENDING
+notes: Official Gemma 4 E2B instruction-tuned QAT Q4_0 weights and multimodal projector run through llama.cpp's JetPack 6 CUDA backend. The generic CUDA backend was rejected after showing 0% GPU activity and 42.98 s text latency. The accepted 1024px live-camera vision request stayed well below 20 s; available RAM stayed safely above the 500 MiB guard.
