@@ -23,5 +23,5 @@ evidence: |
   elapsed_seconds: 0.392
   result: PASS fresh JPEG captured in under 2 seconds
 fallback_taken: none
-commit: pending
+commit: 08b87f8
 notes: Uses OBSBOT hardware MJPEG through GStreamer and discards four warm-up frames. The first cold-open run took 2.028 s and failed; the immediate acceptance rerun passed. Frame copied to Mac as artifacts/m1-camera.jpg (SHA-256 bc6a3c9ceaf292c113394a1c72e49a993bf3bc021a2fb545627343d7243ec8e0) and visually confirmed as the workspace view.
