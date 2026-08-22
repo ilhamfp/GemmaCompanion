@@ -93,5 +93,5 @@ evidence: |
   session_logs: /home/iputra/gemma-companion/logs/session-19700101-085459-445289.jsonl; /home/iputra/gemma-companion/logs/session-19700101-085520-951762.jsonl
   result: PASS two consecutive full Akinator games with Gemma-initiated physical camera moves
 fallback_taken: none
-commit: PENDING
+commit: 1046829
 notes: Automated verification passed with keyboard/scripted truthful answers and live AT-CSP1 TTS. Both logs independently contain GEMMA_LOOK_DECISION followed by physical LOOK and GAME_RESULT PASS. Awaiting the contract-required human confirmation that speech was audible and the gimbal physically moved; only then may this become DONE. After the run, 3.0 GiB RAM and 418 GiB disk remained available.
