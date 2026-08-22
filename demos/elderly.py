@@ -1,4 +1,4 @@
-"""Voice-first, safety-bounded misplaced-glasses finder."""
+"""Voice-first, safety-bounded misplaced-object finder."""
 
 from __future__ import annotations
 
@@ -11,16 +11,25 @@ from pathlib import Path
 from agent.loop import AgentLoop, AgentLoopError
 from agent.prompts import AGENT_CORE, ELDERLY_PROMPT
 from audio.tts import speak
+from camera.obsbot import look_at
 from tools.registry import (
     REPORT_FOUND_SCHEMA,
     REPORT_NOT_FOUND_SCHEMA,
-    dispatch_look,
     look_schema,
     tool_name,
 )
 
 SEARCH_ORDER = ("center", "left", "right", "up", "down")
 LOOK_FOR_DIRECTION = {direction: f"look_{direction}" for direction in SEARCH_ORDER}
+SEARCH_POSITIONS = {
+    # Room-calibrated initial view faces forward and above the tabletop;
+    # the autonomous left/tabletop sweep reveals the requested device.
+    "center": (0.0, 25.0),
+    "left": (-120.0, -25.0),
+    "right": (120.0, -25.0),
+    "up": (0.0, 25.0),
+    "down": (0.0, -25.0),
+}
 MEDICAL_WORDS = {
     "dose",
     "dosage",
@@ -64,40 +73,110 @@ class ElderlyFinder:
         if self.speech:
             speak(clean, words_per_minute=120)
 
+    def _move_to(self, direction: str, *, issued_by_gemma: bool) -> tuple[float, float]:
+        pan, tilt = SEARCH_POSITIONS[direction]
+        started = time.monotonic()
+        position = look_at(pan, tilt)
+        time.sleep(0.8)
+        self.loop.log(
+            "LOOK" if issued_by_gemma else "SEARCH_START_MOVE",
+            tool=LOOK_FOR_DIRECTION[direction],
+            direction=direction,
+            pan_degrees=position[0],
+            tilt_degrees=position[1],
+            issued_by="Gemma" if issued_by_gemma else "fixed-start",
+            latency_seconds=round(time.monotonic() - started, 3),
+        )
+        return position
+
     @staticmethod
     def _argument(call: dict, key: str) -> str:
         arguments = (call.get("function") or {}).get("arguments") or {}
         return " ".join(str(arguments.get(key) or "").split())
 
-    def _inspect(self, image_path: str, direction: str, next_tool: str | None) -> tuple[str, str]:
+    def _inspect(
+        self,
+        image_path: str,
+        direction: str,
+        next_tool: str | None,
+        target: str,
+    ) -> tuple[str, str]:
         checked = ", ".join(
             item.direction for item in self.loop.memory.observations
         ) or "none"
         if next_tool:
-            continuation = f"If glasses are not clearly visible, call {next_tool} to continue the systematic search."
+            continuation = f"If the requested object is not clearly visible, call {next_tool} to continue the systematic search."
             tools = [REPORT_FOUND_SCHEMA, look_schema(next_tool)]
         else:
-            continuation = "This is the final direction. If glasses are not clearly visible, call report_not_found."
+            continuation = "This is the final direction. If the requested object is not clearly visible, call report_not_found."
             tools = [REPORT_FOUND_SCHEMA, REPORT_NOT_FOUND_SCHEMA]
-        prompt = f"""Request: find the user's wearable eyeglasses.
+        vision_prompt = f"""Inspect only this fresh image for the user's {target}.
 Current physical camera direction: {direction}.
-Previously inspected directions: {checked}.
-Inspect only this fresh image. Report glasses only when their frame or lenses are clearly visible.
-Do not mistake laptops, screens, cables, bags, or faces without visible frames for glasses.
-If found, call report_found with one simple furniture-relative location.
+Pay attention to the target's stated color, brand, shape, and object type.
+Do not substitute a merely similar object or infer one outside the frame.
+Brand text may be unreadable, so describe any candidate matching the target's physical appearance and type.
+In one grounded sentence, state what matching candidate is visible and locate it relative to a table, chair, laptop, cable, or other physical object.
+Never use image-relative wording such as left side or right side. If nothing matches, state that no matching object is visible."""
+        visual_evidence, _ = self.loop._step(
+            [
+                {"role": "system", "content": f"{AGENT_CORE}\n\n{ELDERLY_PROMPT}"},
+                {"role": "user", "content": vision_prompt},
+            ],
+            [image_path],
+        )
+        self.loop.log(
+            "VISUAL_EVIDENCE",
+            direction=direction,
+            target=target,
+            text=visual_evidence,
+        )
+
+        decision_prompt = f"""Request: find the user's {target}.
+Current direction: {direction}. Previously inspected: {checked}.
+Grounded evidence from your just-completed image inspection: {visual_evidence}
+Report the requested object only if that evidence clearly describes a candidate matching its physical appearance and type.
+If found, call report_found with one simple physical location naming nearby furniture or objects; never say a side of the image.
 {continuation}
 Call exactly one supplied tool and do not invent a location."""
         model_text, calls = self.loop._step(
             [
                 {"role": "system", "content": f"{AGENT_CORE}\n\n{ELDERLY_PROMPT}"},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": decision_prompt},
             ],
-            [image_path],
-            tools,
+            tools=tools,
         )
         if calls:
             call = calls[0]
-            return tool_name(call), self._argument(call, "location")
+            action = tool_name(call)
+            location = self._argument(call, "location")
+            physical_anchors = ("table", "desk", "chair", "laptop", "cable", "cup", "bag")
+            if action == "report_found" and (
+                "image" in location.lower()
+                or not any(anchor in location.lower() for anchor in physical_anchors)
+            ):
+                refined, _ = self.loop._step(
+                    [
+                        {
+                            "role": "system",
+                            "content": "Rewrite visual locations in plain furniture-relative language.",
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Target: {target}. Grounded visual evidence: {visual_evidence}. "
+                                f"Original location wording: {location}. Reply with only a short physical "
+                                "location using a table, chair, laptop, cable, or another nearby object. "
+                                "Never mention the image or camera."
+                            ),
+                        },
+                    ]
+                )
+                location = " ".join(refined.split()).rstrip(".")
+                if "surface" in location.lower():
+                    location = re.sub(r"\bsurface\b", "tabletop", location, flags=re.IGNORECASE)
+            if action == "report_found" and "surface" in location.lower():
+                location = re.sub(r"\bsurface\b", "tabletop", location, flags=re.IGNORECASE)
+            return action, location
 
         match = re.match(r"^FOUND:\s*(.+)$", model_text, flags=re.IGNORECASE)
         if match:
@@ -107,9 +186,18 @@ Call exactly one supplied tool and do not invent a location."""
             fallback_action = next_tool or "report_not_found"
             self.loop.log("PARSED_TEXT_ACTION", tool=fallback_action, text=model_text)
             return fallback_action, ""
+        plain_action = model_text.strip().lower().strip("` .")
+        if plain_action == next_tool or (next_tool is None and plain_action == "report_not_found"):
+            self.loop.log("PARSED_TEXT_ACTION", tool=plain_action, text=model_text)
+            return plain_action, ""
         raise AgentLoopError(f"Gemma returned no parseable finder action: {model_text!r}")
 
-    def search_live(self, request: str = "Please find my glasses") -> FinderResult:
+    def search_live(
+        self,
+        request: str = "Please find my glasses",
+        *,
+        target: str = "wearable eyeglasses",
+    ) -> FinderResult:
         if is_medical_request(request):
             refusal = medical_refusal()
             self._say(refusal)
@@ -117,34 +205,41 @@ Call exactly one supplied tool and do not invent a location."""
             return FinderResult(False, None, refusal, (), 0.0, str(self.loop.log_path))
 
         started = time.monotonic()
-        self._say("You want me to find your glasses, is that right?")
-        self.loop.log("FINDER_START", request=request)
+        self._say(f"You want me to find the {target}, is that right?")
+        self.loop.log("FINDER_START", request=request, target=target)
         gemma_moves: list[str] = []
 
-        dispatch_look("look_center")
+        self._move_to("center", issued_by_gemma=False)
         direction_index = 0
         while direction_index < len(SEARCH_ORDER):
             direction = SEARCH_ORDER[direction_index]
             image_path = self.loop.observe(direction)
-            self.loop.memory.remember(direction, image_path, "inspected for glasses")
+            self.loop.memory.remember(direction, image_path, f"inspected for {target}")
             next_tool = (
                 LOOK_FOR_DIRECTION[SEARCH_ORDER[direction_index + 1]]
                 if direction_index + 1 < len(SEARCH_ORDER)
                 else None
             )
-            action, location = self._inspect(image_path, direction, next_tool)
-            self.loop.log("FINDER_DECISION", direction=direction, tool=action, location=location)
+            action, location = self._inspect(image_path, direction, next_tool, target)
+            self.loop.log(
+                "FINDER_DECISION",
+                direction=direction,
+                target=target,
+                tool=action,
+                location=location,
+            )
 
             if action == "report_found":
                 if not location:
-                    raise AgentLoopError("Gemma reported glasses without a location")
-                spoken = f"Your glasses are {location.rstrip('.')} .".replace(" .", ".")
+                    raise AgentLoopError("Gemma reported the target without a location")
+                spoken = f"Your {target} is {location.rstrip('.')} .".replace(" .", ".")
                 self._say(spoken)
                 duration = time.monotonic() - started
                 self.loop.log(
                     "FINDER_RESULT",
                     result="FOUND",
                     direction=direction,
+                    target=target,
                     location=location,
                     duration_seconds=round(duration, 3),
                 )
@@ -159,7 +254,7 @@ Call exactly one supplied tool and do not invent a location."""
             if action == "report_not_found":
                 if next_tool is not None:
                     raise AgentLoopError("Gemma stopped before checking every direction")
-                spoken = "I couldn't find your glasses from here; please check their usual case."
+                spoken = f"I couldn't find the {target} from here; please check its usual place."
                 self._say(spoken)
                 duration = time.monotonic() - started
                 self.loop.log("FINDER_RESULT", result="NOT_FOUND", duration_seconds=round(duration, 3))
@@ -171,12 +266,17 @@ Call exactly one supplied tool and do not invent a location."""
             gemma_moves.append(action)
             self.loop.memory.tool_calls += 1
             self.loop.log("GEMMA_LOOK_DECISION", tool=action, issued_by="Gemma")
-            dispatch_look(action)
             direction_index += 1
+            self._move_to(SEARCH_ORDER[direction_index], issued_by_gemma=True)
 
         raise AgentLoopError("finder exhausted its bounded search unexpectedly")
 
-    def evaluate_negative_fixture(self, fixture_path: str | Path) -> FinderResult:
+    def evaluate_negative_fixture(
+        self,
+        fixture_path: str | Path,
+        *,
+        target: str = "wearable eyeglasses",
+    ) -> FinderResult:
         started = time.monotonic()
         fixture = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
         frames = fixture.get("frames") or {}
@@ -194,16 +294,16 @@ Call exactly one supplied tool and do not invent a location."""
                 if index + 1 < len(SEARCH_ORDER)
                 else None
             )
-            action, location = self._inspect(image_path, direction, next_tool)
+            action, location = self._inspect(image_path, direction, next_tool, target)
             if action == "report_found":
                 raise AgentLoopError(
-                    f"negative fixture unexpectedly reported glasses in {direction}: {location}"
+                    f"negative fixture unexpectedly reported {target} in {direction}: {location}"
                 )
             if action == "report_not_found":
                 if next_tool is not None:
                     raise AgentLoopError("negative fixture stopped before all five directions")
                 duration = time.monotonic() - started
-                spoken = "I couldn't find your glasses from here; please check their usual case."
+                spoken = f"I couldn't find the {target} from here; please check its usual place."
                 self._say(spoken)
                 self.loop.log("FINDER_RESULT", result="NOT_FOUND", fixture=str(fixture_path))
                 return FinderResult(False, None, spoken, tuple(moves), duration, str(self.loop.log_path))
@@ -214,12 +314,16 @@ Call exactly one supplied tool and do not invent a location."""
         raise AgentLoopError("negative fixture did not produce an honest not-found result")
 
 
-def capture_negative_fixture(path: str | Path, *, log_dir: str | Path | None = None) -> dict:
+def capture_negative_fixture(
+    path: str | Path,
+    *,
+    target: str = "wearable eyeglasses",
+    log_dir: str | Path | None = None,
+) -> dict:
     finder = ElderlyFinder(speech=False, log_dir=log_dir)
     frames: dict[str, str] = {}
     for index, direction in enumerate(SEARCH_ORDER):
-        tool = LOOK_FOR_DIRECTION[direction]
-        dispatch_look(tool)
+        finder._move_to(direction, issued_by_gemma=False)
         image_path = finder.loop.observe(direction)
         frames[direction] = image_path
         next_tool = (
@@ -227,13 +331,13 @@ def capture_negative_fixture(path: str | Path, *, log_dir: str | Path | None = N
             if index + 1 < len(SEARCH_ORDER)
             else None
         )
-        action, location = finder._inspect(image_path, direction, next_tool)
+        action, location = finder._inspect(image_path, direction, next_tool, target)
         if action == "report_found":
             raise AgentLoopError(
-                f"cannot prepare absent-glasses fixture: Gemma found glasses in {direction}: {location}"
+                f"cannot prepare negative fixture: Gemma found {target} in {direction}: {location}"
             )
-    dispatch_look("look_center")
-    payload = {"target": "glasses", "frames": frames, "source": "live Jetson camera sweep"}
+    finder._move_to("center", issued_by_gemma=False)
+    payload = {"target": target, "frames": frames, "source": "live Jetson camera sweep"}
     destination = Path(path).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

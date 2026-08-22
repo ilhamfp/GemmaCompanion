@@ -20,7 +20,7 @@ _TILT_ABSOLUTE = _CAMERA_CLASS_BASE + 9
 
 # Stay well away from the OBSBOT's physical stops even though the queried range
 # is wider. These bounds are sufficient for the room-scanning demos.
-SAFE_PAN_DEGREES = (-60.0, 60.0)
+SAFE_PAN_DEGREES = (-120.0, 120.0)
 SAFE_TILT_DEGREES = (-30.0, 30.0)
 
 
@@ -114,19 +114,19 @@ def look_at(pan_deg: float, tilt_deg: float) -> tuple[float, float]:
 
 
 def look_left() -> tuple[float, float]:
-    return look_at(-45, 0)
+    return look_at(-120, 0)
 
 
 def look_right() -> tuple[float, float]:
-    return look_at(45, 0)
+    return look_at(120, 0)
 
 
 def look_up() -> tuple[float, float]:
-    return look_at(0, -25)
+    return look_at(0, 25)
 
 
 def look_down() -> tuple[float, float]:
-    return look_at(0, 25)
+    return look_at(0, -25)
 
 
 def look_center() -> tuple[float, float]:

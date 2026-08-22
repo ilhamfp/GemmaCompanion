@@ -76,7 +76,7 @@ REPORT_FOUND_SCHEMA = {
     "type": "function",
     "function": {
         "name": "report_found",
-        "description": "Report clearly visible glasses with a plain furniture-relative location.",
+        "description": "Report the clearly visible requested object with a plain furniture-relative location.",
         "parameters": {
             "type": "object",
             "properties": {"location": {"type": "string"}},
@@ -90,7 +90,7 @@ REPORT_NOT_FOUND_SCHEMA = {
     "type": "function",
     "function": {
         "name": "report_not_found",
-        "description": "Honestly finish after every search direction has been inspected without seeing glasses.",
+        "description": "Honestly finish after every search direction has been inspected without seeing the requested object.",
         "parameters": {
             "type": "object",
             "properties": {},
