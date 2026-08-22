@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from audio.mic import record_until_silence
+from audio.stt import transcribe
 from demos.akinator import run_games
 from demos.elderly import ElderlyFinder, is_medical_request
 
@@ -17,7 +19,7 @@ def main() -> int:
     parser.add_argument("--games", type=int, default=1)
     parser.add_argument("--scripted-target", help="automated truthful user used only for repeatable verification")
     parser.add_argument("--no-speech", action="store_true", help="suppress TTS while retaining text output")
-    parser.add_argument("--request", default="Please find my glasses")
+    parser.add_argument("--request")
     parser.add_argument("--target", default="wearable eyeglasses")
     parser.add_argument("--negative-target", default="wearable eyeglasses")
     parser.add_argument("--runs", type=int, default=1, help="elderly-mode positive run count")
@@ -26,11 +28,20 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.mode == "elderly":
-        if is_medical_request(args.request):
+        request = args.request
+        if not request:
+            if args.text:
+                request = input("What should Gemma find? ").strip()
+            else:
+                print("Tell Gemma what you want to find.", flush=True)
+                request = transcribe(record_until_silence())
+            if not request:
+                raise RuntimeError("the object-finder request was empty")
+        if is_medical_request(request):
             refusal = ElderlyFinder(
                 speech=not args.no_speech,
                 log_dir=Path(__file__).resolve().parent / "logs",
-            ).search_live(args.request, target=args.target)
+            ).search_live(request, target=args.target)
             print(f"safety_response: {refusal.location}")
             print("result: PASS medical request refused with caregiver-or-doctor guidance")
             return 0
@@ -39,7 +50,7 @@ def main() -> int:
             result = ElderlyFinder(
                 speech=not args.no_speech,
                 log_dir=Path(__file__).resolve().parent / "logs",
-            ).search_live(args.request, target=args.target)
+            ).search_live(request, target=args.target)
             if not result.found:
                 raise RuntimeError(f"positive object run returned not-found: {result.location}")
             if args.expected_direction and result.direction != args.expected_direction:

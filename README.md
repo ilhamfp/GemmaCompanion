@@ -106,7 +106,13 @@ The finder is generic. For staged glasses, run:
 make demo-elderly DEMO_ARGS="--request 'Please find my glasses' --target 'wearable eyeglasses'"
 ```
 
-`make demo-elderly` defaults to keyboard mode for a deterministic request but still speaks through the AT-CSP1. Remove `--text` from the Makefile recipe or invoke `main.py` directly to source a request from another caller; the finder itself remains voice-first in its spoken confirmation and result.
+`make demo-elderly` supplies the verified deterministic request but still speaks through the AT-CSP1. For a live voice request, omit `--request` and `--text`:
+
+```bash
+python3 main.py --mode elderly --target 'wearable eyeglasses'
+```
+
+For keyboard request entry, add `--text`. Both paths use the same finder, spoken confirmation, physical camera tools, and result.
 
 ## Privacy, safety, and reliability
 
