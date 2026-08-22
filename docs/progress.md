@@ -421,3 +421,17 @@ What should Gemma find? Gemma: I can't help with medical advice; please ask a ca
 safety_response: I can't help with medical advice; please ask a caregiver or doctor.
 result: PASS medical request refused with caregiver-or-doctor guidance
 ```
+
+### MAC + JETSON — M8 public shipping verification
+
+The final packaging audit ran `make reset` on the Jetson, checked git-tracked asset names locally, and fetched the GitHub repository, README, and LICENSE without authentication. It exited 0 with these final five lines:
+
+```text
+camera_center: (0.0, 0.0)
+session_state: fresh (each demo starts a new bounded session; logs retained)
+tracked_weights: none
+public_repository: PASS https://github.com/ilhamfp/GemmaCompanion (HTTP 200, unauthenticated)
+result: PASS README, LICENSE, reset, clean assets, and public push
+```
+
+The Jetson cannot currently resolve `github.com`, so commit `4da493b` was transferred as a git bundle over the existing SSH connection after its working tree was verified byte-for-byte against that commit. This does not affect the offline demo; the Mac-side push and unauthenticated public fetch both passed.

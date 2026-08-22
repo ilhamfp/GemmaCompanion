@@ -109,3 +109,17 @@ evidence: |
 fallback_taken: Audio-Technica tabletop speaker substituted for glasses at the human's explicit request after physical glasses could not be staged inside the useful camera sweep; a genuinely absent red umbrella supplied the honest not-found test.
 commit: 6b55f17
 notes: The generalized elderly finder retains the same confirmation, systematic search, plain location, uncertainty, and medical-safety behavior. Every positive log contains a Gemma-issued look_left before a grounded speaker detection in the new frame; no accepted run contains CAPTURE_RETRY. The human confirmed in chat that the spoken result and physical OBSBOT movement worked. After the run, 2.8 GiB RAM and 418 GiB disk remained available.
+
+## M8 Ship and demo handoff
+status: IN_PROGRESS
+verified_by: make reset + unauthenticated public repository audit
+verified_at: 2026-08-22 12:51 SGT
+evidence: |
+  camera_center: (0.0, 0.0)
+  session_state: fresh (each demo starts a new bounded session; logs retained)
+  tracked_weights: none
+  public_repository: PASS https://github.com/ilhamfp/GemmaCompanion (HTTP 200, unauthenticated)
+  result: PASS README, LICENSE, reset, clean assets, and public push
+fallback_taken: none
+commit: 4da493b
+notes: Code shipping is complete and public. M8 remains IN_PROGRESS only for the human-owned demo video and Devpost submission; the dry-run and recording checklist is docs/demo-checklist.md.
