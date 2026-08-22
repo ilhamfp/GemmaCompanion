@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
+from agent.gemma import GemmaClient
 from agent.loop import AgentLoop, AgentLoopError
 from agent.prompts import AGENT_CORE, ELDERLY_PROMPT
 from audio.tts import (
@@ -68,23 +72,50 @@ class FinderResult:
     log_path: str
 
 
+class FinderCancelled(AgentLoopError):
+    """Raised when a newer spoken turn invalidates an active object search."""
+
+
 class ElderlyFinder:
-    def __init__(self, *, speech: bool = True, log_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        speech: bool = True,
+        log_dir: str | Path | None = None,
+        gemma: GemmaClient | None = None,
+        say_callback: Callable[[str], None] | None = None,
+        continue_check: Callable[[], bool] | None = None,
+        camera_lock: threading.Lock | None = None,
+    ) -> None:
         self.speech = speech
-        self.loop = AgentLoop(log_dir=log_dir)
+        self.loop = AgentLoop(gemma=gemma, log_dir=log_dir)
+        self.say_callback = say_callback
+        self.continue_check = continue_check
+        self.camera_lock = camera_lock
+
+    def _checkpoint(self) -> None:
+        if self.continue_check is not None and not self.continue_check():
+            raise FinderCancelled("a newer user turn cancelled the object search")
 
     def _say(self, text: str) -> None:
+        self._checkpoint()
         clean = " ".join(text.split())
         print(f"Gemma: {clean}", flush=True)
         self.loop.log("SAY", text=clean)
-        if self.speech:
+        if self.say_callback is not None:
+            self.say_callback(clean)
+        elif self.speech:
             speak(clean, words_per_minute=120)
+        self._checkpoint()
 
     def _move_to(self, direction: str, *, issued_by_gemma: bool) -> tuple[float, float]:
+        self._checkpoint()
         pan, tilt = SEARCH_POSITIONS[direction]
         started = time.monotonic()
-        position = look_at(pan, tilt)
-        time.sleep(0.8)
+        guard = self.camera_lock if self.camera_lock is not None else nullcontext()
+        with guard:
+            position = look_at(pan, tilt)
+            time.sleep(0.8)
         self.loop.log(
             "LOOK" if issued_by_gemma else "SEARCH_START_MOVE",
             tool=LOOK_FOR_DIRECTION[direction],
@@ -94,7 +125,16 @@ class ElderlyFinder:
             issued_by="Gemma" if issued_by_gemma else "fixed-start",
             latency_seconds=round(time.monotonic() - started, 3),
         )
+        self._checkpoint()
         return position
+
+    def _observe(self, direction: str) -> str:
+        self._checkpoint()
+        guard = self.camera_lock if self.camera_lock is not None else nullcontext()
+        with guard:
+            image_path = self.loop.observe(direction)
+        self._checkpoint()
+        return image_path
 
     @staticmethod
     def _argument(call: dict, key: str) -> str:
@@ -108,6 +148,7 @@ class ElderlyFinder:
         next_tool: str | None,
         target: str,
     ) -> tuple[str, str]:
+        self._checkpoint()
         checked = ", ".join(
             item.direction for item in self.loop.memory.observations
         ) or "none"
@@ -131,6 +172,7 @@ Never use image-relative wording such as left side or right side. If nothing mat
             ],
             [image_path],
         )
+        self._checkpoint()
         self.loop.log(
             "VISUAL_EVIDENCE",
             direction=direction,
@@ -152,6 +194,7 @@ Call exactly one supplied tool and do not invent a location."""
             ],
             tools=tools,
         )
+        self._checkpoint()
         if calls:
             call = calls[0]
             action = tool_name(call)
@@ -214,6 +257,7 @@ Call exactly one supplied tool and do not invent a location."""
             return FinderResult(False, None, refusal, (), 0.0, str(self.loop.log_path))
 
         started = time.monotonic()
+        self._checkpoint()
         confirmation = (
             GLASSES_CONFIRMATION
             if target.casefold() in {"glasses", "wearable eyeglasses"}
@@ -228,7 +272,7 @@ Call exactly one supplied tool and do not invent a location."""
         direction_index = 0
         while direction_index < len(SEARCH_ORDER):
             direction = SEARCH_ORDER[direction_index]
-            image_path = self.loop.observe(direction)
+            image_path = self._observe(direction)
             self.loop.memory.remember(direction, image_path, f"inspected for {target}")
             next_tool = (
                 LOOK_FOR_DIRECTION[SEARCH_ORDER[direction_index + 1]]

@@ -23,7 +23,7 @@ Verify the installed service:
 2. Leave the AT-CSP1 microphone physically muted.
 3. Apply power and wait. Ubuntu, the local Gemma server, the resident Whisper server, and the companion start automatically; no login, Mac, Wi-Fi, or keyboard is required.
 4. OBSBOT centers and captures one fresh still.
-5. Readiness is audible: Gemma says exactly `Hey, Gemma here!` after silently inspecting the centered fresh frame. This is the cue that vision, speech, and continuous capture are all live.
+5. Readiness is audible: Gemma says exactly `Hi, I'm Gemma!` after silently inspecting the centered fresh frame. This is the cue that vision, speech, and continuous capture are all live.
 6. Unmute, speak one request, then mute. The muted return closes the utterance.
 
 Cold-boot readiness can take roughly one to two minutes. Do not begin speaking until the audible readiness sentence.
@@ -45,6 +45,8 @@ Examples:
 - `Look center.`
 - `What do you see?` — captures a fresh still at the current physical direction, then answers.
 - `Look left and tell me what you see.` — moves first, then captures and explains.
+- `Find my AirPods.` — Gemma extracts the generic visual target and searches center, left, right, up, and down until grounded evidence finds it or every view is exhausted.
+- `Is this a scam or not?` — captures a fresh view of the phone, reads legible SMS text, identifies concrete warning signs, and gives cautious advice.
 - `Stop.` or `Be quiet.` — cancels current playback.
 - `Volume up.` or `Volume down.` — adjusts the AT-CSP1 by ten percentage points.
 - `Set volume to 90 percent.` — selects an exact hardware playback level.
@@ -58,7 +60,7 @@ Playback defaults to 85% at each companion start. The voice commands above remai
 ## Recommended live-demo sequence
 
 1. Power on with the mic muted and both USB devices attached.
-2. Film the OBSBOT centering and the `Hey, Gemma here!` readiness greeting.
+2. Film the OBSBOT centering and the `Hi, I'm Gemma!` readiness greeting.
 3. Unmute, say `Look left`, and mute. Show the immediate physical movement.
 4. Unmute, ask `What do you see?`, and mute. Capture the fresh grounded answer.
 5. While Gemma is still speaking, unmute, say `Look right`, and mute. Its voice should stop and the OBSBOT should move right.

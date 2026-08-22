@@ -42,6 +42,7 @@ def _test_parser_and_segmenter() -> tuple[float, float]:
         "Wake up": ("wake", None),
         "Turn it up": ("volume_up", None),
         "Volume down": ("volume_down", None),
+        "Is this a scam or not?": ("visual_question", None),
         "How are you?": ("chat", None),
     }
     for phrase, wanted in expected.items():

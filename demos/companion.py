@@ -13,20 +13,28 @@ from pathlib import Path
 
 from agent.gemma import GemmaClient
 from audio.continuous import ContinuousMicrophone, VoiceSegment, temporary_segment_wav
-from audio.interruptible import InterruptibleSpeech
 from audio.fast_stt import transcribe_fast
+from audio.interruptible import InterruptibleSpeech
+from audio.volume import VOLUME_STEP, adjust_volume, set_volume
 from camera.capture import capture_image
 from camera.obsbot import look_center, look_down, look_left, look_right, look_up
-from audio.volume import VOLUME_STEP, adjust_volume, set_volume
+from demos.elderly import ElderlyFinder, FinderCancelled
+from tools.registry import FIND_OBJECT_SCHEMA, tool_name
 
 MIN_AVAILABLE_BYTES = 500 * 1024 * 1024
-READY_CUE = "Hey, Gemma here!"
+READY_CUE = "Hi, I'm Gemma!"
 VISION_PROMPT = """Describe only what is clearly visible in this fresh camera image.
 Use one or two short spoken sentences. Name the main concrete objects and their useful physical locations.
 Do not mention pixels, the image, or anything outside the view. Do not invent uncertain details."""
 CONVERSATION_PROMPT = """You are Gemma Companion, an offline embodied assistant on a Jetson.
 Reply in one or two short spoken sentences with normal punctuation and no markdown.
-Never claim to see something unless it came from a fresh camera observation in this conversation."""
+Never claim to see something unless it came from a fresh camera observation in this conversation.
+When the user asks you to find or locate a misplaced object, call the supplied find_object tool."""
+VISUAL_QUESTION_PROMPT = """Answer the user's question using only this fresh camera view.
+If a phone or message is shown, read only text that is genuinely legible.
+For a suspected scam, explain the concrete warning signs, avoid claiming certainty when text is unclear,
+and recommend not clicking links or sharing codes and verifying the sender through an independent trusted channel.
+Reply in two or three short spoken sentences with no markdown."""
 
 
 def available_memory_bytes() -> int:
@@ -110,8 +118,22 @@ def parse_intent(text: str) -> Intent:
             "tell me what you see",
         )
     )
+    asks_about_visible_content = any(
+        phrase in normalized
+        for phrase in (
+            "read this",
+            "what does this say",
+            "what does the message say",
+            "is this a scam",
+            "scam or not",
+            "is this message safe",
+            "look at this",
+        )
+    )
     if direction and (words & movement_words or len(words) == 1):
         return Intent("look_and_describe" if asks_to_see else "look", direction)
+    if asks_about_visible_content:
+        return Intent("visual_question")
     if asks_to_see:
         return Intent("describe")
     return Intent("chat")
@@ -344,6 +366,8 @@ class CompanionSession:
             return self._describe(active_token, started)
         if intent.kind == "describe":
             return self._describe(active_token, started)
+        if intent.kind == "visual_question":
+            return self._answer_visual(clean, active_token, started)
         return self._chat(clean, active_token, started)
 
     def _spawn(self, target, *args) -> threading.Thread:
@@ -475,6 +499,99 @@ class CompanionSession:
         self._publish_result(result, token)
         return result
 
+    def _answer_visual(self, question: str, token: int, started: float) -> CompanionResult:
+        if available_memory_bytes() < MIN_AVAILABLE_BYTES:
+            result = self._result(
+                "visual_question_refused_low_memory",
+                "I don't have enough free memory to inspect safely.",
+                None,
+                started,
+            )
+            self._publish_result(result, token)
+            return result
+        with self._camera_lock:
+            direction = self._direction
+            image_path = capture_image(Path.cwd() / "captures" / "companion")
+        text, _ = self.gemma.step(
+            [
+                {"role": "system", "content": CONVERSATION_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Current physical camera direction: {direction}.\n"
+                        f"User's question: {question}\n{VISUAL_QUESTION_PROMPT}"
+                    ),
+                },
+            ],
+            [image_path],
+        )
+        result = self._result("visual_question", text, image_path, started)
+        self._publish_result(result, token)
+        return result
+
+    def _finder_say(self, text: str, token: int) -> None:
+        if not self._is_current(token):
+            raise FinderCancelled("a newer user turn cancelled finder speech")
+        if self.speech_enabled:
+            self.speaker.say(text, words_per_minute=120)
+            self.speaker.wait(timeout=60)
+        if not self._is_current(token):
+            raise FinderCancelled("a newer user turn cancelled finder speech")
+
+    def _find_object(
+        self,
+        request: str,
+        target: str,
+        token: int,
+        started: float,
+    ) -> CompanionResult:
+        self._log("FINDER_HANDOFF", turn=token, request=request, target=target)
+        finder = ElderlyFinder(
+            speech=False,
+            log_dir=self.log_path.parent,
+            gemma=self.gemma,
+            say_callback=lambda text: self._finder_say(text, token),
+            continue_check=lambda: self._is_current(token),
+            camera_lock=self._camera_lock,
+        )
+        try:
+            found = finder.search_live(request, target=target)
+        except FinderCancelled:
+            with self._camera_lock:
+                look_center()
+                self._direction = "center"
+            result = self._result("find_cancelled", "", None, started)
+            self._publish_result(result, token, speak=False)
+            return result
+
+        with self._camera_lock:
+            if found.found:
+                self._direction = found.direction or self._direction
+            else:
+                look_center()
+                self._direction = "center"
+        response = (
+            f"Your {target} is {found.location.rstrip('.')} .".replace(" .", ".")
+            if found.found
+            else found.location
+        )
+        result = self._result(
+            "find_found" if found.found else "find_not_found",
+            response,
+            None,
+            started,
+        )
+        self._log(
+            "FINDER_HANDOFF_RESULT",
+            turn=token,
+            found=found.found,
+            finder_log=found.log_path,
+            gemma_moves=found.gemma_moves,
+            location=found.location,
+        )
+        self._publish_result(result, token, speak=False)
+        return result
+
     def _chat(self, text: str, token: int, started: float) -> CompanionResult:
         if available_memory_bytes() < MIN_AVAILABLE_BYTES:
             result = self._result(
@@ -490,7 +607,12 @@ class CompanionSession:
             *self._conversation[-6:],
             {"role": "user", "content": text},
         ]
-        response, _ = self.gemma.step(messages)
+        response, calls = self.gemma.step(messages, tools=[FIND_OBJECT_SCHEMA])
+        if calls and tool_name(calls[0]) == "find_object":
+            arguments = (calls[0].get("function") or {}).get("arguments") or {}
+            target = " ".join(str(arguments.get("target") or "").split())
+            if target:
+                return self._find_object(text, target, token, started)
         if self._is_current(token):
             self._conversation.extend(
                 [

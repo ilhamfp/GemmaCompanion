@@ -42,6 +42,30 @@ LOOK_SCHEMAS = [
 
 HORIZONTAL_LOOK_SCHEMAS = LOOK_SCHEMAS[:2]
 
+FIND_OBJECT_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "find_object",
+        "description": (
+            "Start a systematic physical camera search when the user asks you to find, "
+            "locate, or look for a misplaced everyday object."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": (
+                        "A concise visual object description, such as AirPods charging case."
+                    ),
+                }
+            },
+            "required": ["target"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 ASK_USER_SCHEMA = {
     "type": "function",
     "function": {
