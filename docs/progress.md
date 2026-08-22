@@ -359,3 +359,55 @@ Current status: M7 automated verification passed; human audible/gimbal confirmat
 The human confirmed in chat: `yes it works`. This answers the immediately preceding request to confirm both the spoken Audio-Technica location and physical OBSBOT movement.
 
 Current status: M7 DONE. M8 shipping and human video handoff are next.
+
+## M8 Ship
+
+### JETSON — shipped launcher cold start
+
+The manually started development server was stopped after its executable and exact PID were verified. `scripts/ensure_gemma.sh` then cold-started `scripts/start_gemma.sh`, which resolved the current Ollama model/projector digests from the local manifest rather than using hard-coded blob names.
+
+Exit code: 0
+
+```text
+props_model /home/iputra/gemma-companion/.runtime/ollama-models/blobs/sha256-3646b4c147cd235a44d91df1546d3b7d8e29b547dbe4e1f80856419aa455e6fd
+cold_text SHIP_READY
+latency_seconds 0.429
+new_server_pid=18217
+/home/iputra/gemma-companion/.runtime/ollama-jetson/lib/ollama/llama-server --model /home/iputra/gemma-companion/.runtime/ollama-models/blobs/sha256-3646b4c147cd235a44d91df1546d3b7d8e29b547dbe4e1f80856419aa455e6fd --mmproj /home/iputra/gemma-companion/.runtime/ollama-models/blobs/sha256-58c187648007cab392bd5678b87e862c3e8794017deb945feea2cf256195e96a --host 127.0.0.1 --port 11434
+```
+
+### JETSON — reset and demo entry points
+
+Command:
+
+```sh
+cd ~/gemma-companion && make reset && make -n demo-akinator && make -n demo-elderly
+```
+
+Exit code: 0
+
+```text
+camera_center: (0.0, 0.0)
+session_state: fresh (each demo starts a new bounded session; logs retained)
+python3 main.py --mode akinator
+python3 main.py --mode elderly --text --request 'Please find the Audio-Technica speaker' --target 'small white oval Audio-Technica tabletop speaker'
+```
+
+After reset, `free -h` reported 3.7 GiB available and `df -h /` reported 418 GiB free.
+
+### MAC — pre-push repository audit
+
+Exit code: 0
+
+```text
+tracked_weights: none
+.runtime/example
+models/example.gguf
+captures/example.jpg
+logs/example.jsonl
+readme_local_links: PASS
+```
+
+`README.md`, MIT `LICENSE`, pinned no-sudo runtime bootstrap, `.gitignore`, and the human video checklist are present. Python compilation, Bash syntax, `git diff --check`, local README link checks, ignored-asset checks, and tracked-weight checks all passed.
+
+Current status: M8 IN_PROGRESS; commit, public push, unauthenticated URL verification, and human video/submission remain.

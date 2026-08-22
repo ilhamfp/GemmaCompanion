@@ -6,3 +6,9 @@ captures/
 artifacts/
 logs/
 models/
+.DS_Store
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.bin

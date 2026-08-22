@@ -5,9 +5,43 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runtime_root="${GEMMA_RUNTIME_ROOT:-$repo_root/.runtime/ollama-jetson/lib/ollama}"
 model_root="${OLLAMA_MODELS:-$repo_root/.runtime/ollama-models}"
 server="$runtime_root/llama-server"
-model="$model_root/blobs/sha256-3646b4b47dd1e5348ed7136d0848ef1a60b37d72c85761751351eade345acbfd"
-projector="$model_root/blobs/sha256-58c1879a49af675689120e6d578097691f8a3a59b95e3ae8c1a73de86652bd76"
 cuda_backend="$runtime_root/cuda_jetpack6"
+model_tag="${GEMMA_MODEL_TAG:-e2b-it-qat}"
+manifest="$model_root/manifests/registry.ollama.ai/library/gemma4/$model_tag"
+
+if [[ ! -f "$manifest" ]]; then
+  echo "ERROR: missing Gemma model manifest: $manifest" >&2
+  echo "Run scripts/bootstrap_runtime.sh or follow README.md." >&2
+  exit 1
+fi
+
+mapfile -t model_assets < <(
+  python3 - "$manifest" "$model_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+model_root = Path(sys.argv[2])
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+layers = {layer["mediaType"]: layer["digest"] for layer in manifest["layers"]}
+for media_type in (
+    "application/vnd.ollama.image.model",
+    "application/vnd.ollama.image.projector",
+):
+    digest = layers.get(media_type)
+    if not digest:
+        raise SystemExit(f"manifest lacks {media_type}")
+    print(model_root / "blobs" / digest.replace(":", "-"))
+PY
+)
+
+if [[ ${#model_assets[@]} -ne 2 ]]; then
+  echo "ERROR: could not resolve model and projector from $manifest" >&2
+  exit 1
+fi
+model="${model_assets[0]}"
+projector="${model_assets[1]}"
 
 for required in "$server" "$model" "$projector" "$cuda_backend/libggml-cuda.so"; do
   if [[ ! -e "$required" ]]; then
