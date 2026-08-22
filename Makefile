@@ -1,7 +1,7 @@
 .PHONY: runtime companion volume demo-akinator demo-elderly prep-elderly-negative reset
 
 DEMO_ARGS ?=
-VOLUME ?= 85
+VOLUME ?= 100
 PYTHON := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
 
 runtime:

@@ -55,7 +55,7 @@ Examples:
 
 To interrupt, do not wait for Gemma to finish. Unmute while it is speaking, say the new request, and mute again. Human voice onset terminates active playback; the newest request invalidates any older unfinished model response.
 
-Playback defaults to 85% at each companion start. The voice commands above remain available throughout the session. From a Jetson terminal, `make volume VOLUME=90` provides the same adjustment; `GEMMA_PLAYBACK_VOLUME` changes the service default.
+Playback defaults to 100% at each companion start. The voice commands above remain available throughout the session. From a Jetson terminal, `make volume VOLUME=90` provides the same adjustment; `GEMMA_PLAYBACK_VOLUME` changes the service default.
 
 ## Recommended live-demo sequence
 

@@ -89,7 +89,7 @@ Once Gemma says `Hi, I'm Gemma!`, unmute, speak, and mute again. That exact gree
 
 The microphone PCM stream remains open so physical unmute can be detected immediately, but raw audio is not retained. Only a detected utterance becomes a temporary WAV for local Whisper, and that file is deleted after transcription.
 
-The AT-CSP1 starts at 85% playback volume. While the companion is running, say `volume up`, `volume down`, or `set volume to 90 percent`; these commands change the USB hardware mixer immediately without Gemma inference. From a terminal, use `make volume VOLUME=90`. Set `GEMMA_PLAYBACK_VOLUME` to change the boot default.
+The AT-CSP1 starts at 100% playback volume. While the companion is running, say `volume up`, `volume down`, or `set volume to 90 percent`; these commands change the USB hardware mixer immediately without Gemma inference. From a terminal, use `make volume VOLUME=90`. Set `GEMMA_PLAYBACK_VOLUME` to change the boot default.
 
 The bounded Akinator and object-finder demos remain available below.
 

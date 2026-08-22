@@ -7,7 +7,7 @@ cd "$repo_root"
 export GEMMA_CAMERA_DEVICE="${GEMMA_CAMERA_DEVICE:-/dev/video0}"
 export GEMMA_AUDIO_CAPTURE_DEVICE="${GEMMA_AUDIO_CAPTURE_DEVICE:-plughw:CARD=Device,DEV=0}"
 export GEMMA_AUDIO_PLAYBACK_DEVICE="${GEMMA_AUDIO_PLAYBACK_DEVICE:-plughw:CARD=Device,DEV=0}"
-export GEMMA_PLAYBACK_VOLUME="${GEMMA_PLAYBACK_VOLUME:-85}"
+export GEMMA_PLAYBACK_VOLUME="${GEMMA_PLAYBACK_VOLUME:-100}"
 export PYTHONUNBUFFERED=1
 
 # The TTS venv intentionally reuses Ubuntu's already-verified Pillow package.

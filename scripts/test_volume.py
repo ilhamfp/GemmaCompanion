@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify AT-CSP1 hardware playback volume control and leave it at 85%."""
+"""Verify AT-CSP1 hardware playback volume control and leave it at 100%."""
 
 from __future__ import annotations
 
@@ -15,16 +15,16 @@ from audio.volume import adjust_volume, get_volume, set_volume  # noqa: E402
 
 def main() -> int:
     initial = get_volume()
-    lower = set_volume(75)
+    lower = set_volume(90)
     final = adjust_volume(10)
-    if abs(lower - 75) > 1:
-        raise AssertionError(f"75% request read back as {lower}%")
-    if abs(final - 85) > 1:
+    if abs(lower - 90) > 1:
+        raise AssertionError(f"90% request read back as {lower}%")
+    if abs(final - 100) > 1:
         raise AssertionError(f"+10 adjustment read back as {final}%")
     print(f"initial_volume_percent: {initial}")
-    print(f"set_volume: PASS; requested=75; readback={lower}")
+    print(f"set_volume: PASS; requested=90; readback={lower}")
     print(f"adjust_volume: PASS; delta=+10; readback={final}")
-    print("result: PASS AT-CSP1 playback volume is adjustable; boot default left at 85%")
+    print("result: PASS AT-CSP1 playback volume is adjustable; boot default left at 100%")
     return 0
 
 
