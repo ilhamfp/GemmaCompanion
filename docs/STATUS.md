@@ -39,3 +39,17 @@ evidence: |
 fallback_taken: none
 commit: 3ca6e19
 notes: Standard UVC pan_absolute/tilt_absolute controls are driven with direct V4L2 ioctls because v4l2-ctl is absent. Movement is clamped to pan +/-60 degrees and tilt +/-30 degrees, safely inside hardware limits. Left/right frames were copied to the Mac and visibly differ.
+
+## M3 Audio I/O
+status: FALLBACK
+verified_by: scripts/test_audio.py
+verified_at: 2026-08-22 11:14 SGT
+evidence: |
+  recording: /home/iputra/gemma-companion/captures/audio/recording-88e82b44bd514e27b496409f8f5e8c2a.wav; duration_seconds: 3.000
+  transcript: Gemma, please find my glasses now.
+  spoken: Hello, I am Gemma; device: plughw:3,0
+  text_fallback: yes; status: PASS
+  result: PASS 3s record, offline STT, TTS playback, and text mode
+fallback_taken: eSpeak NG TTS because Piper was not installed; its own verification passed and the human reported hearing playback.
+commit: pending
+notes: AT-CSP1 is ALSA plughw:3,0. STT is whisper.cpp 1.9.3 with the 75 MiB tiny.en model, fully offline. A separate --text run exited 0. The AT-CSP1 echo-cancels its own playback, so the verifier gives an audible cue and transcribes the human response rather than using self-loopback.

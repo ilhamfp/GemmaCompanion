@@ -128,3 +128,56 @@ result: PASS physical PTZ frames differ and camera returned center
 Both frames were copied to `artifacts/`. The left frame is centered on the foreground laptop and far monitor; the right frame shifts across the workspace and adds two people and a window. The measured and visible view change confirms physical movement.
 
 Current status: M0-M2 DONE. M3 is next.
+
+## M3 Audio I/O
+
+### JETSON — text fallback
+
+Command:
+
+```sh
+cd ~/gemma-companion && ./scripts/test_audio.py --text --text-input "yes, please"
+```
+
+Exit code: 0
+
+```text
+mode: text
+input: yes, please
+normalized: yes, please
+audio_devices_used: none
+result: PASS keyboard text fallback exits cleanly
+```
+
+### JETSON — diagnostic human recording
+
+An eight-second direct ALSA capture from `plughw:3,0` was transcribed locally to establish the correct mic path after the AT-CSP1 suppressed self-loopback through echo cancellation.
+
+Exit code: 0
+
+```text
+Gemma, please find my glasses.
+```
+
+### JETSON — accepted verification
+
+Command:
+
+```sh
+cd ~/gemma-companion && ./scripts/test_audio.py
+```
+
+Exit code: 0
+
+```text
+Speak now: Gemma, please find my glasses
+recording: /home/iputra/gemma-companion/captures/audio/recording-88e82b44bd514e27b496409f8f5e8c2a.wav; duration_seconds: 3.000
+transcript: Gemma, please find my glasses now.
+spoken: Hello, I am Gemma; device: plughw:3,0
+text_fallback: yes; status: PASS
+result: PASS 3s record, offline STT, TTS playback, and text mode
+```
+
+The human reported hearing the AT-CSP1 playback in chat. A second `--text --text-input "yes, please"` invocation after the hardware run also exited 0.
+
+Current status: M0-M2 DONE; M3 FALLBACK (counts as DONE). M4 is next.
