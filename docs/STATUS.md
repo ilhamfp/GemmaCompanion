@@ -141,3 +141,17 @@ engine: kokoro-onnx af_heart 1.0
 fallback_taken: none
 commit: e6e96f2
 notes: The human audition choice was verbatim: `af_heart, 1.0 is good, let's do it`. With Gemma running, 3.068 GiB was available after load and the resident TTS process used 419.5 MiB. The current keyboard text fallback exited 0 and unchanged offline STT re-transcribed the accepted live AT-CSP1 recording as `Gemma, please find my glasses now.` The human confirmed the new playback was audible: `let's just assume it's working, i hear it the first time`. The accepted Akinator game reported `look_announcement_overlap: PASS` for `Let me look over there.` during Gemma's `look_left` move.
+
+## M11 Five-beat live companion flow
+status: DONE
+verified_by: scripts/test_demo_flow.py + scripts/test_scam_vision.py
+verified_at: 2026-08-22 14:53 SGT
+evidence: |
+  fixture_text: URGENT; bank locked; shortened link; one-time passcode request
+  gemma_response: This message has several warning signs, such as the urgent tone and the request to reply with a one-time passcode. You should not click the link or share any codes. Please verify the sender through an independent, trusted channel.
+  latency_seconds: 1.991; limit: <5.000
+  advice: PASS; grounded warning signs and cautious next step
+  result: PASS Gemma read and assessed a visible scam SMS
+fallback_taken: none
+commit: 719d589
+notes: The same Jetson verification session also produced the exact `Hi, I'm Gemma!` cue after a fresh frame, physically moved left and right, described distinct fresh views, had Gemma issue `find_object` with target `AirPods`, and routed the scam question to a fresh camera observation. The finder reuses the M7 physically verified systematic search and now supports latest-turn cancellation. Final AirPods placement, a real phone screen, no-Mac boot, and the demo video remain human-owned M8 rehearsal work.

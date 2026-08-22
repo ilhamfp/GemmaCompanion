@@ -523,3 +523,54 @@ result: PASS full Akinator game
 ```
 
 The cached playback worker had started `aplay` and reported active playback before `execute_look(look_left)` dispatched the physical gimbal move. M9 implementation commit: `e6e96f2`.
+
+## M11 Five-beat live companion flow
+
+### JETSON — boot, embodied vision, and generic finder routing
+
+Command:
+
+```sh
+cd ~/gemma-companion && .venv/bin/python scripts/test_demo_flow.py
+```
+
+Mac SGT checkpoint: 2026-08-22 14:53. Exit code: 0.
+
+```text
+Gemma: Hi, I'm Gemma!
+You: look left
+Gemma: Looking left.
+You: what do you see?
+Gemma: There is a desk in the foreground with a computer keyboard and a white speaker. In the background, there are several structural columns and some equipment.
+You: look right
+Gemma: Looking right.
+You: what do you see?
+Gemma: There is a metal object with a grid pattern on the wall. A black cable is visible on the surface in front of it.
+boot_greeting: PASS; cue=Hi, I'm Gemma!
+directional_vision: PASS; sequence=left,describe,right,describe; left_response=There is a desk in the foreground with a computer keyboard and a white speaker. In the background, there are several structural columns and some equipment.; right_response=There is a metal object with a grid pattern on the wall. A black cable is visible on the surface in front of it.
+finder_tool: PASS; issued_by=Gemma; target=AirPods
+scam_route: PASS; fresh_camera_visual_question=yes
+result: PASS boot-to-interaction demo routing
+```
+
+The OBSBOT physically executed both horizontal movements. The generic finder tool hands the Gemma-selected target to the same systematic, grounded five-direction search verified in M7. The user will stage the actual AirPods case for the final M8 rehearsal.
+
+### JETSON — scam SMS visual reasoning
+
+Command:
+
+```sh
+cd ~/gemma-companion && .venv/bin/python scripts/test_scam_vision.py
+```
+
+Mac SGT checkpoint: 2026-08-22 14:53. Exit code: 0.
+
+```text
+fixture_text: URGENT; bank locked; shortened link; one-time passcode request
+gemma_response: This message has several warning signs, such as the urgent tone and the request to reply with a one-time passcode. You should not click the link or share any codes. Please verify the sender through an independent, trusted channel.
+latency_seconds: 1.991; limit: <5.000
+advice: PASS; grounded warning signs and cautious next step
+result: PASS Gemma read and assessed a visible scam SMS
+```
+
+The fixture used a staged, non-private SMS at 1024x576 with large legible text. Runtime remained fully local on the Jetson. A parser/segmentation regression run also exited 0 and confirmed `Is this a scam or not?` routes to fresh visual reasoning.
