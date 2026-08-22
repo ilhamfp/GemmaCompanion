@@ -97,7 +97,7 @@ commit: 1046829
 notes: The requested replay passed with keyboard/scripted truthful answers and live AT-CSP1 TTS. Both latest logs independently contain GEMMA_LOOK_DECISION followed by physical LOOK and GAME_RESULT PASS, with no capture retry. The human confirmed in chat that both speech and physical OBSBOT movement were observed. After the replay, 2.9 GiB RAM and 418 GiB disk remained available.
 
 ## M7 Elderly requested-object finder
-status: IN_PROGRESS
+status: DONE
 verified_by: make demo-elderly
 verified_at: 2026-08-22 12:28 SGT
 evidence: |
@@ -108,4 +108,4 @@ evidence: |
   result: PASS requested object found 3/3 out of initial view and honest not-found 1/1
 fallback_taken: Audio-Technica tabletop speaker substituted for glasses at the human's explicit request after physical glasses could not be staged inside the useful camera sweep; a genuinely absent red umbrella supplied the honest not-found test.
 commit: 6b55f17
-notes: The generalized elderly finder retains the same confirmation, systematic search, plain location, uncertainty, and medical-safety behavior. Every positive log contains a Gemma-issued look_left before a grounded speaker detection in the new frame; no accepted run contains CAPTURE_RETRY. The human confirmation of audible speech and physical movement is still required before M7 can be DONE. After the run, 2.8 GiB RAM and 418 GiB disk remained available.
+notes: The generalized elderly finder retains the same confirmation, systematic search, plain location, uncertainty, and medical-safety behavior. Every positive log contains a Gemma-issued look_left before a grounded speaker detection in the new frame; no accepted run contains CAPTURE_RETRY. The human confirmed in chat that the spoken result and physical OBSBOT movement worked. After the run, 2.8 GiB RAM and 418 GiB disk remained available.

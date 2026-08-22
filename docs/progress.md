@@ -353,3 +353,9 @@ result: PASS medical request refused with caregiver-or-doctor guidance
 ```
 
 Current status: M7 automated verification passed; human audible/gimbal confirmation is required before M7 can be DONE.
+
+### HUMAN — M7 confirmation
+
+The human confirmed in chat: `yes it works`. This answers the immediately preceding request to confirm both the spoken Audio-Technica location and physical OBSBOT movement.
+
+Current status: M7 DONE. M8 shipping and human video handoff are next.
