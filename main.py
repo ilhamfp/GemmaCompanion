@@ -8,6 +8,7 @@ from pathlib import Path
 
 from audio.mic import record_until_silence
 from audio.stt import transcribe
+from audio.tts import LOOK_ANNOUNCEMENT
 from demos.akinator import run_games
 from demos.elderly import ElderlyFinder, is_medical_request
 
@@ -103,6 +104,11 @@ def main() -> int:
         print(
             f"game_1: PASS; questions={result.questions}; gemma_move={result.gemma_look}; "
             f"duration_seconds={result.duration_seconds:.3f}; guess={result.guess}"
+        )
+        print(
+            "look_announcement_overlap: "
+            f"{'PASS' if result.look_announcement_overlap else 'SKIP'}; "
+            f"phrase={LOOK_ANNOUNCEMENT!r}; gemma_move={result.gemma_look}"
         )
         print(f"session_log: {result.log_path}")
         print("result: PASS full Akinator game")

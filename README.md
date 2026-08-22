@@ -18,15 +18,17 @@ The verified runtime is the OpenAI-compatible `llama-server` bundled with Ollama
 
 Measured on the Jetson Orin Nano Super:
 
-| Operation | Accepted latency |
-|---|---:|
-| Text → text | 0.306 s |
-| 1024 px live image → text | 2.099 s |
-| Parseable tool call | 0.550 s |
-| Full Akinator games | 21.506–28.872 s |
-| Full requested-object finder runs | 24.835–25.627 s |
+| Operation | Runtime / license | Accepted latency |
+|---|---|---:|
+| Text → text | Gemma 4 E2B Q4_0 / Gemma terms | 0.306 s |
+| 1024 px live image → text | Gemma 4 E2B Q4_0 / Gemma terms | 2.099 s |
+| Parseable tool call | Gemma 4 E2B Q4_0 / Gemma terms | 0.550 s |
+| Natural TTS, warm first audio | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 1.320 s |
+| Natural TTS, cached clip start | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 0.001 s |
+| Full Akinator games | End-to-end application / MIT | 21.506–40.590 s |
+| Full requested-object finder runs | End-to-end application / MIT | 24.835–25.627 s |
 
-After multimodal inference, `free -h` showed 3.3 GiB available. After the full M7 sequence, 2.8 GiB remained available. The loop aborts below 500 MiB.
+After multimodal inference, `free -h` showed 3.3 GiB available. With Gemma and the resident CPU-only Kokoro model loaded, 3.068 GiB remained available and the TTS process used 419.5 MiB RSS. The loop aborts below 500 MiB.
 
 ## Architecture
 
@@ -39,7 +41,7 @@ whisper.cpp tiny.en ──► short textual memory ──► Gemma 4 E2B Q4_0
                            ┌────────────────────────┼───────────────────────┐
                            │ ASK / ANSWER           │ LOOK tool             │
                            ▼                        ▼                       │
-                    eSpeak NG fallback       bounded UVC pan/tilt          │
+                Kokoro-82M natural TTS       bounded UVC pan/tilt          │
                            │                        │                       │
                            ▼                        ▼                       │
                    AT-CSP1 speaker           fresh OBSBOT JPEG ────────────┘
@@ -67,12 +69,13 @@ Clone into the tested path and bootstrap without installing weights into git:
 git clone https://github.com/ilhamfp/GemmaCompanion.git ~/gemma-companion
 cd ~/gemma-companion
 ./scripts/bootstrap_runtime.sh
+./scripts/bootstrap_tts.sh
 make runtime
 ```
 
-The bootstrap downloads pinned, checksum-verified official Ollama ARM64 and JetPack 6 archives, pulls `gemma4:e2b-it-qat`, downloads the official whisper.cpp b4938 ARM64 runtime and `tiny.en` model, and unpacks Ubuntu's eSpeak NG package without sudo. It needs internet only once. The downloaded `.runtime/` and `models/` trees are ignored by git. If Jetson DNS is unavailable, run the downloads on another machine and copy those two directories to the same repo paths.
+The runtime bootstrap downloads pinned, checksum-verified official Ollama ARM64 and JetPack 6 archives, pulls `gemma4:e2b-it-qat`, downloads the official whisper.cpp b4938 ARM64 runtime and `tiny.en` model, and unpacks Ubuntu's eSpeak NG package without sudo. The TTS bootstrap creates the gitignored `.venv`, installs the pinned CPU-only Kokoro ONNX stack, and downloads checksum-verified `kokoro-v1.0.onnx` and `voices-v1.0.bin` into `models/`. It needs internet only once. The downloaded `.runtime/`, `.venv/`, and `models/` trees are ignored by git. If Jetson DNS is unavailable, run the downloads on another machine and copy the resulting runtime/model assets to the same repo paths.
 
-The base image must already provide GStreamer, ALSA `arecord`/`aplay`, Python, Pillow, the JetPack CUDA userspace, and eSpeak's shared-library dependencies. Run `./scripts/recon.sh` to verify the expected devices before a demo. Environment overrides are available for `GEMMA_CAMERA_DEVICE`, `GEMMA_AUDIO_CAPTURE_DEVICE`, and `GEMMA_AUDIO_PLAYBACK_DEVICE`.
+The base image must already provide GStreamer, ALSA `arecord`/`aplay`, Python, the JetPack CUDA userspace, and eSpeak's shared-library dependencies. Kokoro stays resident on CPU and uses the selected `af_heart` voice at speed 1.0; eSpeak NG remains installed for phonemization and emergency runtime fallback. Run `./scripts/recon.sh` to verify the expected devices before a demo. Environment overrides are available for `GEMMA_CAMERA_DEVICE`, `GEMMA_AUDIO_CAPTURE_DEVICE`, and `GEMMA_AUDIO_PLAYBACK_DEVICE`.
 
 ## Run the demos
 
@@ -109,7 +112,7 @@ make demo-elderly DEMO_ARGS="--request 'Please find my glasses' --target 'wearab
 `make demo-elderly` supplies the verified deterministic request but still speaks through the AT-CSP1. For a live voice request, omit `--request` and `--text`:
 
 ```bash
-python3 main.py --mode elderly --target 'wearable eyeglasses'
+.venv/bin/python main.py --mode elderly --target 'wearable eyeglasses'
 ```
 
 For keyboard request entry, add `--text`. Both paths use the same finder, spoken confirmation, physical camera tools, and result.
@@ -125,7 +128,7 @@ For keyboard request entry, add `--text`. Both paths use the same finder, spoken
 
 ## Honest fallbacks and verification choices
 
-- **TTS fallback:** Piper was unavailable, so the accepted named fallback is eSpeak NG. Speech is robotic but fully offline and was confirmed audible by the human operator.
+- **TTS:** Kokoro-82M via `kokoro-onnx` is the accepted natural, fully offline, CPU-only engine. The resident `af_heart` voice was selected by the human operator; eSpeak NG is retained only as a warning-logged runtime fallback.
 - **STT:** whisper.cpp `tiny.en`, 75 MiB, fully offline. Keyboard `--text` mode is available for noisy rooms.
 - **M7 target change:** physical glasses could not be staged inside the useful camera sweep. At the human's explicit request, the final verified target became the connected white Audio-Technica tabletop speaker. The same generic finder still accepts `wearable eyeglasses` when they are staged clearly.
 - **M7 negative test:** a saved live five-direction baseline was re-evaluated for a genuinely absent red umbrella. It produced the honest not-found response.
@@ -143,7 +146,7 @@ Staged: a known set of easy-to-recognize room objects for Akinator and a known p
 
 ```text
 agent/      shared Gemma client, bounded loop, prompts, memory
-audio/      ALSA capture/playback, whisper.cpp STT, eSpeak NG TTS
+audio/      ALSA capture/playback, whisper.cpp STT, resident Kokoro TTS
 camera/     fresh MJPEG capture and physical UVC pan/tilt
 demos/      Akinator and elderly-friendly requested-object goals
 tools/      deterministic schemas and physical dispatch
@@ -153,4 +156,4 @@ docs/       PRD, operating contract, evidence ledger, command log
 
 ## License
 
-Application code is released under the [MIT License](LICENSE). Gemma, Ollama/llama.cpp runtime assets, whisper.cpp, its model, and eSpeak NG retain their respective upstream licenses.
+Application code is released under the [MIT License](LICENSE). The Kokoro-82M model is Apache-2.0 and the `kokoro-onnx` runtime is MIT-licensed. Gemma, Ollama/llama.cpp runtime assets, whisper.cpp, its model, and eSpeak NG retain their respective upstream licenses.

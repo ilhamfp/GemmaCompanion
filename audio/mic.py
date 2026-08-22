@@ -54,6 +54,9 @@ def record_seconds(
 ) -> str:
     """Record an exact-duration mono WAV from the AT-CSP1."""
 
+    from .tts import wait_until_silent
+
+    wait_until_silent()
     if seconds <= 0:
         raise ValueError("seconds must be positive")
     path = _new_wav_path(output_dir, "recording")
@@ -88,6 +91,9 @@ def record_until_silence(
     terminate capture, which makes the function tolerant of conversational pauses.
     """
 
+    from .tts import wait_until_silent
+
+    wait_until_silent()
     if max_seconds <= silence_seconds or silence_seconds < 1.5:
         raise ValueError("max_seconds must exceed a silence threshold of at least 1.5 seconds")
 

@@ -11,7 +11,14 @@ from agent.loop import AgentLoop, AgentLoopError
 from agent.prompts import AGENT_CORE, AKINATOR_PROMPT
 from audio.mic import record_until_silence
 from audio.stt import transcribe
-from audio.tts import speak
+from audio.tts import (
+    FIXED_PHRASES,
+    LOOK_ANNOUNCEMENT,
+    playback_active,
+    prerender,
+    speak,
+    speak_cached,
+)
 from tools.registry import AKINATOR_ACTION_SCHEMAS, tool_name
 
 
@@ -31,6 +38,7 @@ class GameResult:
     guess: str
     questions: int
     gemma_look: str
+    look_announcement_overlap: bool
     duration_seconds: float
     log_path: str
 
@@ -102,11 +110,26 @@ class AkinatorGame:
     def run(self) -> GameResult:
         started = time.monotonic()
         self.loop.log("GAME_START", mode="akinator", text_mode=self.text_mode)
+        if self.speech:
+            prerender(FIXED_PHRASES)
         inventory = self.loop.room_scan()
 
         # Gemma decides which already-scanned side merits a re-check. This is the
         # visible autonomous move required by the demo, not a fixed controller move.
         gemma_look = self.loop.choose_horizontal_look()
+        print(f"Gemma: {LOOK_ANNOUNCEMENT}", flush=True)
+        self.loop.log("SAY", text=LOOK_ANNOUNCEMENT, cached=True, concurrent_with="LOOK")
+        if self.speech:
+            speak_cached(LOOK_ANNOUNCEMENT)
+        announcement_overlap = self.speech and playback_active()
+        if self.speech and not announcement_overlap:
+            raise AgentLoopError("look announcement was not playing when camera movement began")
+        self.loop.log(
+            "LOOK_ANNOUNCEMENT_OVERLAP",
+            text=LOOK_ANNOUNCEMENT,
+            playing=announcement_overlap,
+            tool=gemma_look,
+        )
         recheck_path, _ = self.loop.execute_look(gemma_look)
         recheck_summary = self.loop.inventory_frame(gemma_look.removeprefix("look_"), recheck_path)
         inventory = f"{inventory}\n- autonomous re-check: {recheck_summary}"
@@ -148,6 +171,22 @@ Call final_answer only for a concrete evidence-based guess. Do not output an act
                         }
                     ]
                     self.loop.log("PARSED_TEXT_ACTION", tool="final_answer", text=model_text)
+                else:
+                    final_match = re.match(
+                        r"^final_answer\s*:\s*(.+)$",
+                        model_text,
+                        flags=re.IGNORECASE,
+                    )
+                    if final_match:
+                        calls = [
+                            {
+                                "function": {
+                                    "name": "final_answer",
+                                    "arguments": {"text": final_match.group(1).strip()},
+                                }
+                            }
+                        ]
+                        self.loop.log("PARSED_TEXT_ACTION", tool="final_answer", text=model_text)
             if not calls:
                 messages.append(
                     {"role": "user", "content": "Use exactly one supplied tool now: ask_user or final_answer."}
@@ -198,6 +237,7 @@ Call final_answer only for a concrete evidence-based guess. Do not output an act
                         guess,
                         self.loop.memory.questions,
                         gemma_look,
+                        announcement_overlap,
                         duration,
                         str(self.loop.log_path),
                     )

@@ -10,7 +10,14 @@ from pathlib import Path
 
 from agent.loop import AgentLoop, AgentLoopError
 from agent.prompts import AGENT_CORE, ELDERLY_PROMPT
-from audio.tts import speak
+from audio.tts import (
+    ELDERLY_NOT_FOUND,
+    FIXED_PHRASES,
+    GLASSES_CONFIRMATION,
+    ONE_MOMENT,
+    prerender,
+    speak,
+)
 from camera.obsbot import look_at
 from tools.registry import (
     REPORT_FOUND_SCHEMA,
@@ -198,6 +205,8 @@ Call exactly one supplied tool and do not invent a location."""
         *,
         target: str = "wearable eyeglasses",
     ) -> FinderResult:
+        if self.speech:
+            prerender(FIXED_PHRASES)
         if is_medical_request(request):
             refusal = medical_refusal()
             self._say(refusal)
@@ -205,7 +214,13 @@ Call exactly one supplied tool and do not invent a location."""
             return FinderResult(False, None, refusal, (), 0.0, str(self.loop.log_path))
 
         started = time.monotonic()
-        self._say(f"You want me to find the {target}, is that right?")
+        confirmation = (
+            GLASSES_CONFIRMATION
+            if target.casefold() in {"glasses", "wearable eyeglasses"}
+            else f"You want me to find the {target}, is that right?"
+        )
+        self._say(confirmation)
+        self._say(ONE_MOMENT)
         self.loop.log("FINDER_START", request=request, target=target)
         gemma_moves: list[str] = []
 
@@ -254,7 +269,11 @@ Call exactly one supplied tool and do not invent a location."""
             if action == "report_not_found":
                 if next_tool is not None:
                     raise AgentLoopError("Gemma stopped before checking every direction")
-                spoken = f"I couldn't find the {target} from here; please check its usual place."
+                spoken = (
+                    ELDERLY_NOT_FOUND
+                    if target.casefold() == "red umbrella"
+                    else f"I couldn't find the {target} from here. Please check its usual place."
+                )
                 self._say(spoken)
                 duration = time.monotonic() - started
                 self.loop.log("FINDER_RESULT", result="NOT_FOUND", duration_seconds=round(duration, 3))
@@ -303,7 +322,11 @@ Call exactly one supplied tool and do not invent a location."""
                 if next_tool is not None:
                     raise AgentLoopError("negative fixture stopped before all five directions")
                 duration = time.monotonic() - started
-                spoken = f"I couldn't find the {target} from here; please check its usual place."
+                spoken = (
+                    ELDERLY_NOT_FOUND
+                    if target.casefold() == "red umbrella"
+                    else f"I couldn't find the {target} from here. Please check its usual place."
+                )
                 self._say(spoken)
                 self.loop.log("FINDER_RESULT", result="NOT_FOUND", fixture=str(fixture_path))
                 return FinderResult(False, None, spoken, tuple(moves), duration, str(self.loop.log_path))

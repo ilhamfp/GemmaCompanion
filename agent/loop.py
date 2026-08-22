@@ -143,16 +143,20 @@ class AgentLoop:
 Objective: discover one additional concrete room object that the current camera view cannot show.
 The evidence is insufficient. Independently choose one horizontal camera direction and call exactly one look tool now.
 Do not ask the human and do not merely describe what you would do."""
-        _, calls = self._step(
+        text, calls = self._step(
             [
                 {"role": "system", "content": AGENT_CORE},
                 {"role": "user", "content": prompt},
             ],
             tools=HORIZONTAL_LOOK_SCHEMAS,
         )
-        if not calls:
-            raise AgentLoopError("Gemma did not issue a look tool call")
-        name = tool_name(calls[0])
+        if calls:
+            name = tool_name(calls[0])
+        else:
+            name = text.strip().lower().strip("` .")
+            if name not in {"look_left", "look_right"}:
+                raise AgentLoopError("Gemma did not issue a look tool call")
+            self.log("PARSED_TEXT_ACTION", tool=name, text=text)
         if name not in {"look_left", "look_right"}:
             raise AgentLoopError(f"Gemma issued an unexpected tool: {name}")
         self.memory.tool_calls += 1
