@@ -231,3 +231,31 @@ result: PASS Gemma issued LOOK and its next visual message used only the new phy
 The JSONL contains ten timestamped events. It records a Gemma-emitted `look_left` tool call, the UVC move to -45 degrees, a fresh capture, and then `NEW_OBJECT: a microphone on the desk`. Immediately after the run, `free -h` reported 4.1 GiB used and 3.2 GiB available; `df -h /` reported 418 GiB free.
 
 Current status: M0-M2 and M4-M5 DONE; M3 FALLBACK (counts as DONE). M6 is next.
+
+## M6 Akinator demo
+
+### JETSON — dry runs and capture hardening
+
+The first one-game text dry run failed because the scripted truthful-user helper answered `no` when Gemma directly named its laptop target. A deterministic exact-target answer fixed that verifier issue; the next one-game run passed in 18.735 seconds. The first two-game run then completed game one but received a transient truncated MJPEG during game two. The shared loop now retries a failed still capture at most three times and logs every retry. Neither failed attempt counts as acceptance evidence.
+
+### JETSON — accepted two-game verification
+
+Command:
+
+```sh
+cd ~/gemma-companion && make demo-akinator DEMO_ARGS='--text --scripted-target laptop --games 2'
+```
+
+Exit code: 0
+
+```text
+game_1: PASS; questions=1; gemma_move=look_left; duration_seconds=21.506; guess=I guess your object is the laptop.
+game_2: PASS; questions=2; gemma_move=look_left; duration_seconds=28.872; guess=I guess your object is the laptop.
+consecutive_games: 2/2 PASS; text_fallback: yes; physical_moves: 2
+session_logs: /home/iputra/gemma-companion/logs/session-19700101-085459-445289.jsonl; /home/iputra/gemma-companion/logs/session-19700101-085520-951762.jsonl
+result: PASS two consecutive full Akinator games with Gemma-initiated physical camera moves
+```
+
+Both accepted logs contain an independent `GEMMA_LOOK_DECISION` for `look_left`, a physical `LOOK`, and `GAME_RESULT: PASS`. There were no capture retries in either accepted game. The run used live AT-CSP1 speech output and scripted text answers. `free -h` afterward reported 4.3 GiB used and 3.0 GiB available; disk had 418 GiB free.
+
+Current status: M6 automated verification passed; human audible/gimbal confirmation is required before M6 can be DONE. M7 has not started.

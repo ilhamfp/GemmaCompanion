@@ -42,6 +42,36 @@ LOOK_SCHEMAS = [
 
 HORIZONTAL_LOOK_SCHEMAS = LOOK_SCHEMAS[:2]
 
+ASK_USER_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": "Ask the user exactly one concise yes/no question about their object.",
+        "parameters": {
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": ["question"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+FINAL_ANSWER_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "final_answer",
+        "description": "Make one evidence-based guess for the user's object.",
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+AKINATOR_ACTION_SCHEMAS = [ASK_USER_SCHEMA, FINAL_ANSWER_SCHEMA]
+
 
 def tool_name(tool_call: dict) -> str:
     return str((tool_call.get("function") or {}).get("name") or "")

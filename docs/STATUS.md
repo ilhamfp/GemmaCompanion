@@ -81,3 +81,17 @@ evidence: |
 fallback_taken: none
 commit: 8ba3e77
 notes: The shared bounded loop checks the 500 MiB RAM guard around every inference, permits at most 8 tool calls and 12 questions, stores compact directional visual memory, and recenters in a finally block. The Jetson wall clock remains unset, so the log filename is 1970 while verified_at uses the Mac SGT clock. After-load RAM was 4.1 GiB used and 3.2 GiB available; disk had 418 GiB free.
+
+## M6 Akinator demo
+status: IN_PROGRESS
+verified_by: make demo-akinator
+verified_at: 2026-08-22 11:48 SGT
+evidence: |
+  game_1: PASS; questions=1; gemma_move=look_left; duration_seconds=21.506; guess=I guess your object is the laptop.
+  game_2: PASS; questions=2; gemma_move=look_left; duration_seconds=28.872; guess=I guess your object is the laptop.
+  consecutive_games: 2/2 PASS; text_fallback: yes; physical_moves: 2
+  session_logs: /home/iputra/gemma-companion/logs/session-19700101-085459-445289.jsonl; /home/iputra/gemma-companion/logs/session-19700101-085520-951762.jsonl
+  result: PASS two consecutive full Akinator games with Gemma-initiated physical camera moves
+fallback_taken: none
+commit: PENDING
+notes: Automated verification passed with keyboard/scripted truthful answers and live AT-CSP1 TTS. Both logs independently contain GEMMA_LOOK_DECISION followed by physical LOOK and GAME_RESULT PASS. Awaiting the contract-required human confirmation that speech was audible and the gimbal physically moved; only then may this become DONE. After the run, 3.0 GiB RAM and 418 GiB disk remained available.

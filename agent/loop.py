@@ -15,7 +15,7 @@ from PIL import Image, ImageChops, ImageStat
 from agent.gemma import GemmaClient
 from agent.memory import SessionMemory
 from agent.prompts import AGENT_CORE, INVENTORY_PROMPT
-from camera.capture import capture_image
+from camera.capture import CameraCaptureError, capture_image
 from camera.obsbot import look_center
 from tools.registry import HORIZONTAL_LOOK_SCHEMAS, dispatch_look, tool_name
 
@@ -81,7 +81,16 @@ class AgentLoop:
 
     def observe(self, direction: str) -> str:
         started = time.monotonic()
-        image_path = capture_image(Path.cwd() / "captures" / "sessions")
+        image_path = ""
+        for attempt in range(1, 4):
+            try:
+                image_path = capture_image(Path.cwd() / "captures" / "sessions")
+                break
+            except CameraCaptureError as exc:
+                self.log("CAPTURE_RETRY", direction=direction, attempt=attempt, error=str(exc))
+                if attempt == 3:
+                    raise
+                time.sleep(0.25)
         self.log(
             "OBSERVE",
             direction=direction,
@@ -103,6 +112,27 @@ class AgentLoop:
         self.memory.remember(direction, image_path, text)
         self.log("MEMORY", direction=direction, inventory=text)
         return text
+
+    def room_scan(self) -> str:
+        """Perform the fixed left-center-right scan used at the start of both demos."""
+
+        for direction, tool in (
+            ("left", "look_left"),
+            ("center", "look_center"),
+            ("right", "look_right"),
+        ):
+            position = dispatch_look(tool)
+            self.log(
+                "ROOM_SCAN_MOVE",
+                direction=direction,
+                pan_degrees=position[0],
+                tilt_degrees=position[1],
+            )
+            image_path = self.observe(direction)
+            self.inventory_frame(direction, image_path)
+        look_center()
+        self.log("ROOM_SCAN_COMPLETE", inventory=self.memory.inventory())
+        return self.memory.inventory()
 
     def choose_horizontal_look(self) -> str:
         if self.memory.tool_calls >= self.max_tool_calls:
