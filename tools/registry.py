@@ -68,6 +68,24 @@ FIND_OBJECT_SCHEMA = {
     },
 }
 
+INSPECT_VIEW_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "inspect_view",
+        "description": (
+            "Capture and inspect a fresh camera frame before answering a question about something "
+            "currently visible. Use this whenever the user refers to this or that object, something "
+            "they are holding or showing, a visible color or identity, or writing on a label or screen."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+}
+
 ASK_USER_SCHEMA = {
     "type": "function",
     "function": {

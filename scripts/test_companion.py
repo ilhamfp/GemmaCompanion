@@ -22,6 +22,7 @@ from demos.companion import (  # noqa: E402
     CompanionResult,
     CompanionSession,
     available_memory_bytes,
+    asks_for_current_view,
     parse_intent,
     preserves_target_identity,
 )
@@ -59,7 +60,13 @@ def _test_parser_and_segmenter() -> tuple[float, float]:
         "Can you advise me? Is this tax a scam?": ("visual_question", None),
         "Can you read the text inside that smartphone?": ("visual_question", None),
         "What does it say?": ("visual_question", None),
+        "What color is the object I'm holding?": ("visual_question", None),
+        "Can you identify this object?": ("visual_question", None),
+        "What is written on this label?": ("visual_question", None),
+        "What is this?": ("visual_question", None),
+        "What am I holding?": ("visual_question", None),
         "How are you?": ("chat", None),
+        "Why is the sky blue?": ("chat", None),
     }
     for phrase, wanted in expected.items():
         intent = parse_intent(phrase)
@@ -69,6 +76,8 @@ def _test_parser_and_segmenter() -> tuple[float, float]:
     volume_intent = parse_intent("Set volume to 92 percent")
     if volume_intent.kind != "volume_set" or volume_intent.value != 92:
         raise AssertionError(f"numeric volume parsed incorrectly: {volume_intent}")
+    if asks_for_current_view("is this medication safe", {"is", "this", "medication", "safe"}):
+        raise AssertionError("non-visual high-stakes question was treated as a camera request")
 
     segmenter = VoiceSegmenter()
     muted = _pcm(100, segmenter.chunk_bytes // 2)

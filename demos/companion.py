@@ -16,10 +16,10 @@ from audio.continuous import ContinuousMicrophone, VoiceSegment, temporary_segme
 from audio.fast_stt import transcribe_fast
 from audio.interruptible import InterruptibleSpeech
 from audio.volume import VOLUME_STEP, adjust_volume, set_volume
-from camera.capture import capture_image
+from camera.capture import CameraCaptureError, capture_image
 from camera.obsbot import look_center, look_down, look_left, look_right, look_up
 from demos.elderly import ElderlyFinder, FinderCancelled
-from tools.registry import FIND_OBJECT_SCHEMA, tool_name
+from tools.registry import FIND_OBJECT_SCHEMA, INSPECT_VIEW_SCHEMA, tool_name
 
 MIN_AVAILABLE_BYTES = 500 * 1024 * 1024
 READY_CUE = "Hi, I'm Gemma!"
@@ -31,7 +31,10 @@ Reply in one or two short spoken sentences with normal punctuation and no markdo
 Never claim to see something unless it came from a fresh camera observation in this conversation.
 When the user asks you to find or locate a misplaced object, call the supplied find_object tool.
 In its target argument, preserve the requested identity and add concise common visual traits such as
-object type, shape, and color when you know them; never replace it with a different product."""
+object type, shape, and color when you know them; never replace it with a different product.
+When the user asks about a currently visible object, something they are holding or showing, its color
+or identity, or writing on a label or screen, call inspect_view before answering. Never answer such a
+question from general knowledge or an earlier frame."""
 VISUAL_QUESTION_PROMPT = """Answer the user's question using only this fresh camera view.
 If a phone or message is shown, read only text that is genuinely legible.
 For a suspected scam, explain the concrete warning signs, avoid claiming certainty when text is unclear,
@@ -74,6 +77,35 @@ def preserves_target_identity(original: str, candidate: str) -> bool:
     }
     candidate_tokens = set(re.findall(r"[a-z0-9]+", candidate.casefold()))
     return bool(candidate) and len(candidate) <= 160 and identity_tokens <= candidate_tokens
+
+
+def asks_for_current_view(normalized: str, words: set[str]) -> bool:
+    """Recognize general deictic questions that require a fresh camera frame."""
+
+    deictic = bool(words & {"this", "that", "these", "those"})
+    physical_reference = bool(words & {"holding", "showing", "wearing"}) or any(
+        phrase in normalized
+        for phrase in ("in my hand", "in front of you", "in front of the camera")
+    )
+    visible_noun = bool(
+        words & {"object", "item", "thing", "label", "screen", "sign", "message", "text"}
+    )
+    perception_words = {
+        "color",
+        "colour",
+        "identify",
+        "recognize",
+        "recognise",
+        "read",
+        "written",
+    }
+    direct_deictic_question = bool(
+        re.search(r"\b(?:what|who)\s+(?:is|are)\s+(?:this|that|these|those)\b", normalized)
+    )
+    asks_about_traits = bool(words & perception_words) and (
+        deictic or physical_reference or visible_noun
+    )
+    return direct_deictic_question or physical_reference or asks_about_traits
 
 
 @dataclass(frozen=True)
@@ -172,7 +204,7 @@ def parse_intent(text: str) -> Intent:
             "is this message safe",
             "look at this",
         )
-    )
+    ) or asks_for_current_view(normalized, words)
     if direction and (words & movement_words or len(words) == 1):
         return Intent("look_and_describe" if asks_to_see else "look", direction)
     if asks_about_visible_content:
@@ -254,6 +286,19 @@ class CompanionSession:
     def _is_current(self, token: int) -> bool:
         with self._turn_lock:
             return token == self._turn
+
+    def _capture_fresh(self, output_dir: Path) -> str:
+        """Retry a transient malformed or unavailable camera frame."""
+
+        for attempt in range(1, 4):
+            try:
+                return capture_image(output_dir)
+            except CameraCaptureError as exc:
+                self._log("CAPTURE_RETRY", attempt=attempt, error=str(exc))
+                if attempt == 3:
+                    raise
+                time.sleep(0.25)
+        raise RuntimeError("camera retry loop exited unexpectedly")
 
     def _on_speech_start(self) -> None:
         self.last_barge_in_at = time.monotonic()
@@ -469,7 +514,7 @@ class CompanionSession:
         try:
             self._move("center", token)
             with self._camera_lock:
-                image_path = capture_image(Path.cwd() / "captures" / "companion")
+                image_path = self._capture_fresh(Path.cwd() / "captures" / "companion")
             text, _ = self.gemma.step(
                 [
                     {
@@ -527,7 +572,7 @@ class CompanionSession:
             return result
         with self._camera_lock:
             direction = self._direction
-            image_path = capture_image(Path.cwd() / "captures" / "companion")
+            image_path = self._capture_fresh(Path.cwd() / "captures" / "companion")
         text, _ = self.gemma.step(
             [
                 {"role": "system", "content": CONVERSATION_PROMPT},
@@ -554,7 +599,7 @@ class CompanionSession:
             return result
         with self._camera_lock:
             direction = self._direction
-            image_path = capture_image(Path.cwd() / "captures" / "companion")
+            image_path = self._capture_fresh(Path.cwd() / "captures" / "companion")
         text, _ = self.gemma.step(
             [
                 {"role": "system", "content": CONVERSATION_PROMPT},
@@ -684,12 +729,19 @@ class CompanionSession:
             *self._conversation[-6:],
             {"role": "user", "content": text},
         ]
-        response, calls = self.gemma.step(messages, tools=[FIND_OBJECT_SCHEMA])
-        if calls and tool_name(calls[0]) == "find_object":
-            arguments = (calls[0].get("function") or {}).get("arguments") or {}
-            target = " ".join(str(arguments.get("target") or "").split())
-            if target:
-                return self._find_object(text, target, token, started)
+        response, calls = self.gemma.step(
+            messages,
+            tools=[FIND_OBJECT_SCHEMA, INSPECT_VIEW_SCHEMA],
+        )
+        if calls:
+            selected_tool = tool_name(calls[0])
+            if selected_tool == "find_object":
+                arguments = (calls[0].get("function") or {}).get("arguments") or {}
+                target = " ".join(str(arguments.get("target") or "").split())
+                if target:
+                    return self._find_object(text, target, token, started)
+            if selected_tool == "inspect_view":
+                return self._answer_visual(text, token, started)
         if self._is_current(token):
             self._conversation.extend(
                 [
