@@ -207,3 +207,27 @@ free_h_after_load: Mem:           7.3Gi       4.0Gi       135Mi       5.2Mi     
 ```
 
 Current status: M0-M2 and M4 DONE; M3 FALLBACK (counts as DONE). M5 is next.
+
+## M5 Agent loop
+
+### JETSON — accepted verification
+
+Command:
+
+```sh
+cd ~/gemma-companion && ./scripts/test_loop.py
+```
+
+Exit code: 0
+
+```text
+gemma_action: look_left; issued_by: Gemma; tool_calls: 1/8
+physical_result: pan=-45.0; tilt=0.0; mean_pixel_diff=75.723
+post_look_message: NEW_OBJECT: a microphone on the desk
+session_log: /home/iputra/gemma-companion/logs/session-19700101-084916-060515.jsonl; events: 10; order: decide,look,capture,reference
+result: PASS Gemma issued LOOK and its next visual message used only the new physical frame
+```
+
+The JSONL contains ten timestamped events. It records a Gemma-emitted `look_left` tool call, the UVC move to -45 degrees, a fresh capture, and then `NEW_OBJECT: a microphone on the desk`. Immediately after the run, `free -h` reported 4.1 GiB used and 3.2 GiB available; `df -h /` reported 418 GiB free.
+
+Current status: M0-M2 and M4-M5 DONE; M3 FALLBACK (counts as DONE). M6 is next.

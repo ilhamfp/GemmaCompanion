@@ -7,6 +7,7 @@ All values are measured on the Jetson. The 8 GB unified memory is shared by CPU 
 | M0 idle recon | 923 MiB | 6.4 GiB | n/a | safe |
 | M3 after audio verification | 934 MiB | 6.4 GiB | Whisper tiny.en 75 MiB; whisper.cpp 11 MiB; eSpeak CLI 68 KiB | safe |
 | M4 Gemma loaded after multimodal inference | 4.0 GiB | 3.3 GiB | Gemma 4 E2B Q4_0 3.10 GiB; projector 986 MiB; mmap-backed llama.cpp CUDA runtime | safe |
+| M5 after agent-loop verification | 4.1 GiB | 3.2 GiB | Gemma and projector resident; two 1024px vision calls; JSONL logging | safe |
 
 The M3 speech processes are short-lived. Its row reports memory immediately after the accepted test; no model server was resident at that checkpoint.
 

@@ -67,3 +67,17 @@ evidence: |
 fallback_taken: none
 commit: b81c6cf
 notes: Official Gemma 4 E2B instruction-tuned QAT Q4_0 weights and multimodal projector run through llama.cpp's JetPack 6 CUDA backend. The generic CUDA backend was rejected after showing 0% GPU activity and 42.98 s text latency. The accepted 1024px live-camera vision request stayed well below 20 s; available RAM stayed safely above the 500 MiB guard.
+
+## M5 Agent loop
+status: DONE
+verified_by: scripts/test_loop.py
+verified_at: 2026-08-22 11:41 SGT
+evidence: |
+  gemma_action: look_left; issued_by: Gemma; tool_calls: 1/8
+  physical_result: pan=-45.0; tilt=0.0; mean_pixel_diff=75.723
+  post_look_message: NEW_OBJECT: a microphone on the desk
+  session_log: /home/iputra/gemma-companion/logs/session-19700101-084916-060515.jsonl; events: 10; order: decide,look,capture,reference
+  result: PASS Gemma issued LOOK and its next visual message used only the new physical frame
+fallback_taken: none
+commit: PENDING
+notes: The shared bounded loop checks the 500 MiB RAM guard around every inference, permits at most 8 tool calls and 12 questions, stores compact directional visual memory, and recenters in a finally block. The Jetson wall clock remains unset, so the log filename is 1970 while verified_at uses the Mac SGT clock. After-load RAM was 4.1 GiB used and 3.2 GiB available; disk had 418 GiB free.
