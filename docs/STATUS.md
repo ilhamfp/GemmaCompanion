@@ -169,3 +169,17 @@ evidence: |
 fallback_taken: none
 commit: 1c8267e
 notes: The original live miss was traced to Whisper converting `Find my AirPods` into `Fine. My iPhone`; the same captured frame immediately identified the case when given the correct target. The offline speech prompt now preserves AirPods, Gemma expands it to `small white Apple AirPods wireless-earbud charging case`, and the finder starts on the front tabletop. Two additional final-code live repetitions passed, for 3/3 total, at 5.771 and 5.489 seconds. A bounded decision retry handles invalid narrated directions, textual llama.cpp tool serialization is parsed safely, markdown locations are reduced to plain speech, and a deliberately absent target proved the complete physical sweep without hallucination. The exact `CompanionSession.handle_text("Find my AirPods.")` handoff then passed in 8.237 seconds with `find_found` and `on the black tabletop`.
+
+## M13 Obscure-placement AirPods hardening
+status: DONE
+verified_by: scripts/test_live_finder.py
+verified_at: 2026-08-22 16:19 SGT
+evidence: |
+  airpods_positive: PASS; direction=right; location=near a table; duration_seconds=20.353
+  absent_negative: PASS; target=bright magenta stapler; duration_seconds=33.829
+  coverage_moves: look_left,look_right,look_up,look_down
+  logs: positive=/home/iputra/gemma-companion/logs/session-19700101-073712-954047.jsonl; negative=/home/iputra/gemma-companion/logs/session-19700101-073733-377924.jsonl
+  result: PASS live AirPods detection and complete honest physical sweep
+fallback_taken: none
+commit: 50c433d
+notes: A blind miss was traced to a partially clipped AirPods case at the extreme edge of a physically covered frame. Wide misses now receive one four-panel magnified edge inspection; target rewriting cannot discard product identity; a target-blind second observation rejects explicit color conflicts; detail JPEGs are atomic and size-validated; and a model request is bounded to 30 seconds. The exact hard frame passed 3/3, a newly hidden live placement passed 3/3 at direction=right in 23.651, 20.266, and 21.786 seconds, and the full CompanionSession handoff found it at direction=right in 24.508 seconds. Per the human's explicit instruction, this commit was synced to the Jetson but was not pushed to GitHub. The installed service still needs a human-authorized restart to load the new process image.

@@ -676,3 +676,63 @@ latency_seconds: 8.237
 companion_log: /home/iputra/gemma-companion/logs/companion-19700101-090512-869428.jsonl
 result: PASS companion tool handoff found the live AirPods
 ```
+
+## M13 Obscure-placement AirPods hardening
+
+### JETSON — clipped-edge root cause and deterministic regression
+
+The blind physical sweep covered the hidden object, but the AirPods case appeared only as a small, partially clipped white object at the far edge of the right frame. The wide view missed it; a four-panel sheet made from overlapping edge crops exposed enough detail for Gemma to identify it. After the final classifier prompt and independent color-consistency check, the exact hard frame and the previously hallucinated absent-stapler frame produced:
+
+```text
+hard_airpods: PASS; action=report_found; location=near a laptop; log=/home/iputra/gemma-companion/logs/session-19700101-092458-111048.jsonl
+false_stapler: PASS; action=report_not_found; location=; log=/home/iputra/gemma-companion/logs/session-19700101-092506-887347.jsonl
+result: PASS clipped AirPods recovered and false stapler rejected
+```
+
+The earlier hard AirPods frame was also repeated three times without changing it:
+
+```text
+edge_regression_1: PASS; action=report_found; location=near a laptop; log=/home/iputra/gemma-companion/logs/session-19700101-092002-218664.jsonl
+edge_regression_2: PASS; action=report_found; location=near a laptop; log=/home/iputra/gemma-companion/logs/session-19700101-092009-091356.jsonl
+edge_regression_3: PASS; action=report_found; location=near a laptop; log=/home/iputra/gemma-companion/logs/session-19700101-092014-442832.jsonl
+result: PASS 3/3 clipped-edge AirPods detections
+```
+
+### JETSON — new blind placement, repeated live verification
+
+The human moved the AirPods again and left them untouched. Command:
+
+```sh
+cd ~/gemma-companion && python3 scripts/test_live_finder.py --positive-only --repeat-positive 3
+```
+
+Exit code: 0.
+
+```text
+airpods_positive_1: PASS; direction=right; location=near a table; duration_seconds=23.651; log=/home/iputra/gemma-companion/logs/session-19700101-073557-382124.jsonl
+airpods_positive_2: PASS; direction=right; location=near a table; duration_seconds=20.266; log=/home/iputra/gemma-companion/logs/session-19700101-073621-106072.jsonl
+airpods_positive_3: PASS; direction=right; location=near a table; duration_seconds=21.786; log=/home/iputra/gemma-companion/logs/session-19700101-073641-445681.jsonl
+result: PASS live AirPods detection repeated 3/3
+```
+
+The final full positive-plus-absent verifier exited 0:
+
+```text
+airpods_positive: PASS; direction=right; location=near a table; duration_seconds=20.353
+absent_negative: PASS; target=bright magenta stapler; duration_seconds=33.829
+coverage_moves: look_left,look_right,look_up,look_down
+logs: positive=/home/iputra/gemma-companion/logs/session-19700101-073712-954047.jsonl; negative=/home/iputra/gemma-companion/logs/session-19700101-073733-377924.jsonl
+result: PASS live AirPods detection and complete honest physical sweep
+```
+
+The exact companion routing path used after live speech also passed on that new placement:
+
+```text
+action: find_found
+response: Your small white Apple AirPods wireless-earbud charging case is near a table.
+direction: right
+duration_seconds: 24.508
+companion_log: /home/iputra/gemma-companion/logs/companion-19700101-073814-179400.jsonl
+```
+
+The final continuous companion regression reported `result: PASS continuous companion routing, physical PTZ, and fresh vision`, with 2273.8 MiB available. Disk remained 417 GiB free. Implementation commit: `50c433d`. Per the human's explicit instruction, no GitHub push was performed; files were synced only to the Jetson. The active boot service still requires a human-authorized restart before the stage demo.
