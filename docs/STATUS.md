@@ -79,5 +79,5 @@ evidence: |
   session_log: /home/iputra/gemma-companion/logs/session-19700101-084916-060515.jsonl; events: 10; order: decide,look,capture,reference
   result: PASS Gemma issued LOOK and its next visual message used only the new physical frame
 fallback_taken: none
-commit: PENDING
+commit: 8ba3e77
 notes: The shared bounded loop checks the 500 MiB RAM guard around every inference, permits at most 8 tool calls and 12 questions, stores compact directional visual memory, and recenters in a finally block. The Jetson wall clock remains unset, so the log filename is 1970 while verified_at uses the Mac SGT clock. After-load RAM was 4.1 GiB used and 3.2 GiB available; disk had 418 GiB free.
