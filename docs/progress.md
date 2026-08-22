@@ -279,3 +279,9 @@ result: PASS two consecutive full Akinator games with Gemma-initiated physical c
 ```
 
 Both replay logs contain `GEMMA_LOOK_DECISION: look_left` and `GAME_RESULT: PASS`; neither contains `CAPTURE_RETRY`. Afterward, 2.9 GiB RAM and 418 GiB disk remained available. Human confirmation remains the final M6 gate.
+
+### HUMAN — M6 confirmation
+
+The human confirmed in chat: `yup! i saw both!` This confirms both the audible AT-CSP1 speech and physical OBSBOT movement requested in the immediately preceding question.
+
+Current status: M6 DONE. M7 is next.

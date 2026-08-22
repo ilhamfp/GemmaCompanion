@@ -83,7 +83,7 @@ commit: 8ba3e77
 notes: The shared bounded loop checks the 500 MiB RAM guard around every inference, permits at most 8 tool calls and 12 questions, stores compact directional visual memory, and recenters in a finally block. The Jetson wall clock remains unset, so the log filename is 1970 while verified_at uses the Mac SGT clock. After-load RAM was 4.1 GiB used and 3.2 GiB available; disk had 418 GiB free.
 
 ## M6 Akinator demo
-status: IN_PROGRESS
+status: DONE
 verified_by: make demo-akinator
 verified_at: 2026-08-22 12:03 SGT
 evidence: |
@@ -94,4 +94,4 @@ evidence: |
   result: PASS two consecutive full Akinator games with Gemma-initiated physical camera moves
 fallback_taken: none
 commit: 1046829
-notes: The requested replay passed with keyboard/scripted truthful answers and live AT-CSP1 TTS. Both latest logs independently contain GEMMA_LOOK_DECISION followed by physical LOOK and GAME_RESULT PASS, with no capture retry. Awaiting the contract-required human confirmation that speech was audible and the gimbal physically moved; only then may this become DONE. After the replay, 2.9 GiB RAM and 418 GiB disk remained available.
+notes: The requested replay passed with keyboard/scripted truthful answers and live AT-CSP1 TTS. Both latest logs independently contain GEMMA_LOOK_DECISION followed by physical LOOK and GAME_RESULT PASS, with no capture retry. The human confirmed in chat that both speech and physical OBSBOT movement were observed. After the replay, 2.9 GiB RAM and 418 GiB disk remained available.
