@@ -9,5 +9,5 @@ evidence: |
   Available RAM: 6.4Gi
   Available disk on /: 425G
 fallback_taken: none
-commit: pending
+commit: bcaa8cd
 notes: v4l2-ctl is absent, so recon used read-only sysfs/direct V4L2 ioctls. Pan and tilt absolute controls are exposed on /dev/video0. Jetson wall clock is unset (1970); verified_at uses the Mac SGT clock.
