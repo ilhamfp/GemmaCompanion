@@ -51,5 +51,5 @@ evidence: |
   text_fallback: yes; status: PASS
   result: PASS 3s record, offline STT, TTS playback, and text mode
 fallback_taken: eSpeak NG TTS because Piper was not installed; its own verification passed and the human reported hearing playback.
-commit: pending
+commit: f148b46
 notes: AT-CSP1 is ALSA plughw:3,0. STT is whisper.cpp 1.9.3 with the 75 MiB tiny.en model, fully offline. A separate --text run exited 0. The AT-CSP1 echo-cancels its own playback, so the verifier gives an audible cue and transcribes the human response rather than using self-loopback.
