@@ -155,3 +155,17 @@ evidence: |
 fallback_taken: none
 commit: 719d589
 notes: The same Jetson verification session also produced the exact `Hi, I'm Gemma!` cue after a fresh frame, physically moved left and right, described distinct fresh views, had Gemma issue `find_object` with target `AirPods`, and routed the scam question to a fresh camera observation. The finder reuses the M7 physically verified systematic search and now supports latest-turn cancellation. Final AirPods placement, a real phone screen, no-Mac boot, and the demo video remain human-owned M8 rehearsal work.
+
+## M12 Live AirPods finder recovery
+status: DONE
+verified_by: scripts/test_live_finder.py
+verified_at: 2026-08-22 15:45 SGT
+evidence: |
+  airpods_positive: PASS; direction=center; location=on the dark tabletop in the center; duration_seconds=5.797
+  absent_negative: PASS; target=bright magenta stapler; duration_seconds=25.229
+  coverage_moves: look_left,look_right,look_up,look_down
+  logs: positive=/home/iputra/gemma-companion/logs/session-19700101-090221-650921.jsonl; negative=/home/iputra/gemma-companion/logs/session-19700101-090227-520270.jsonl
+  result: PASS live AirPods detection and complete honest physical sweep
+fallback_taken: none
+commit: 1c8267e
+notes: The original live miss was traced to Whisper converting `Find my AirPods` into `Fine. My iPhone`; the same captured frame immediately identified the case when given the correct target. The offline speech prompt now preserves AirPods, Gemma expands it to `small white Apple AirPods wireless-earbud charging case`, and the finder starts on the front tabletop. Two additional final-code live repetitions passed, for 3/3 total, at 5.771 and 5.489 seconds. A bounded decision retry handles invalid narrated directions, textual llama.cpp tool serialization is parsed safely, markdown locations are reduced to plain speech, and a deliberately absent target proved the complete physical sweep without hallucination.

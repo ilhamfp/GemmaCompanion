@@ -595,3 +595,67 @@ Mem:           7.3Gi       4.3Gi       140Mi       5.1Mi       3.1Gi       3.0Gi
 ```
 
 Available RAM is 3.0 GiB and disk is 417 GiB, safely above the GOAL.md guards. Installation is paused for the required human-authorized command: `sudo ./scripts/install_boot_service.sh`.
+
+## M12 Live AirPods finder recovery
+
+### JETSON — root-cause evidence
+
+The failed voice request was transcribed as `Fine. My iPhone.` and the finder therefore searched for `iPhone`. Its final tabletop observation described a white wireless charging object but did not treat that as an iPhone. The captured frame was copied to the Mac and visually inspected; the AirPods case is clearly visible on the black tabletop beside the smartphone and laptop.
+
+The identical saved live frame was then queried with the correct target. Exit code: 0.
+
+```text
+response: Yes, a small white Apple AirPods wireless-earbud charging case is clearly visible. It is located on the black surface, to the left of the smartphone/laptop.
+calls: []
+```
+
+Kokoro synthesized the actual phrase and the restarted, AirPods-biased offline Whisper server transcribed it exactly:
+
+```text
+spoken: Find my AirPods.
+transcript: Find my AirPods.
+result: PASS offline STT preserved AirPods target
+```
+
+Gemma's tool call preserved and expanded the visual identity:
+
+```text
+target: small white Apple AirPods wireless-earbud charging case
+result: PASS Gemma preserved AirPods in visual target
+```
+
+### JETSON — physical coverage calibration
+
+The five configured camera viewpoints were captured and compared before the final finder run. The AirPods were visibly present in the front-tabletop, right, and downward frames. Left showed the other side of the laptop; up showed the ceiling. All pairwise mean-pixel differences exceeded 39, confirming genuine physical viewpoint changes. The finder starts with the front tabletop so a nearby case does not wait for the final observation.
+
+### JETSON — accepted live finder verification
+
+Command:
+
+```sh
+cd ~/gemma-companion && .venv/bin/python scripts/test_live_finder.py
+```
+
+Mac SGT checkpoint: 2026-08-22 15:45. Exit code: 0.
+
+```text
+Gemma: You want me to find the small white Apple AirPods wireless-earbud charging case, is that right?
+Gemma: One moment.
+Gemma: Your small white Apple AirPods wireless-earbud charging case is on the dark tabletop in the center.
+Gemma: You want me to find the bright magenta stapler, is that right?
+Gemma: One moment.
+Gemma: I couldn't find the bright magenta stapler from here. Please check its usual place.
+airpods_positive: PASS; direction=center; location=on the dark tabletop in the center; duration_seconds=5.797
+absent_negative: PASS; target=bright magenta stapler; duration_seconds=25.229
+coverage_moves: look_left,look_right,look_up,look_down
+logs: positive=/home/iputra/gemma-companion/logs/session-19700101-090221-650921.jsonl; negative=/home/iputra/gemma-companion/logs/session-19700101-090227-520270.jsonl
+result: PASS live AirPods detection and complete honest physical sweep
+```
+
+The positive case stops immediately because it is grounded in the first view. The negative case forces the complete remaining sequence and proves that a full search ends honestly. Two additional final-code positive repetitions passed:
+
+```text
+airpods_repeat_1: PASS; direction=center; location=on the dark tabletop in the center; duration_seconds=5.771; log=/home/iputra/gemma-companion/logs/session-19700101-090311-130076.jsonl
+airpods_repeat_2: PASS; direction=center; location=on the dark table; duration_seconds=5.489; log=/home/iputra/gemma-companion/logs/session-19700101-090316-974932.jsonl
+result: PASS final AirPods finder repeated 2/2 after verifier pass
+```
