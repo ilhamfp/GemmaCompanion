@@ -1,0 +1,21 @@
+[Unit]
+Description=Gemma Companion continuous offline voice and vision session
+After=local-fs.target sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+User=iputra
+Group=iputra
+SupplementaryGroups=audio video
+WorkingDirectory=/home/iputra/gemma-companion
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/iputra/gemma-companion/scripts/run_companion.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=240
+TimeoutStopSec=45
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

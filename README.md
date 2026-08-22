@@ -79,6 +79,18 @@ The base image must already provide GStreamer, ALSA `arecord`/`aplay`, Python, t
 
 ## Run the demos
 
+For the continuous, tactile companion session, keep the AT-CSP1 microphone muted and run:
+
+```bash
+make companion
+```
+
+Once Gemma says `I'm ready`, unmute, speak, and mute again. Voice onset interrupts any current reply; commands such as `look left`, `what do you see?`, and `look right` remain available throughout one persistent session. See [`docs/LIVE_COMPANION.md`](docs/LIVE_COMPANION.md) for the one-time boot-service installation and the exact no-Mac power-on demo.
+
+The microphone PCM stream remains open so physical unmute can be detected immediately, but raw audio is not retained. Only a detected utterance becomes a temporary WAV for local Whisper, and that file is deleted after transcription.
+
+The bounded Akinator and object-finder demos remain available below.
+
 Reset first. It recenters the camera; every demo process creates fresh in-memory state while retaining evidence logs:
 
 ```bash
@@ -150,7 +162,7 @@ audio/      ALSA capture/playback, whisper.cpp STT, resident Kokoro TTS
 camera/     fresh MJPEG capture and physical UVC pan/tilt
 demos/      Akinator and elderly-friendly requested-object goals
 tools/      deterministic schemas and physical dispatch
-scripts/    recon, runtime bootstrap/start, and milestone verifiers
+scripts/    recon, runtime bootstrap/start, continuous companion, and verifiers
 docs/       PRD, operating contract, evidence ledger, command log
 ```
 

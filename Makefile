@@ -1,10 +1,13 @@
-.PHONY: runtime demo-akinator demo-elderly prep-elderly-negative reset
+.PHONY: runtime companion demo-akinator demo-elderly prep-elderly-negative reset
 
 DEMO_ARGS ?=
 PYTHON := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
 
 runtime:
 	@./scripts/ensure_gemma.sh
+
+companion:
+	@./scripts/run_companion.sh
 
 demo-akinator: runtime
 	@$(PYTHON) main.py --mode akinator $(DEMO_ARGS)
