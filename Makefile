@@ -1,4 +1,4 @@
-.PHONY: runtime demo-akinator demo-elderly reset
+.PHONY: runtime demo-akinator demo-elderly prep-elderly-negative reset
 
 DEMO_ARGS ?=
 
@@ -10,6 +10,9 @@ demo-akinator: runtime
 
 demo-elderly: runtime
 	@python3 main.py --mode elderly $(DEMO_ARGS)
+
+prep-elderly-negative: runtime
+	@python3 scripts/prep_elderly_negative.py
 
 reset:
 	@python3 -c 'from camera.obsbot import look_center; print("camera_center:", look_center())'

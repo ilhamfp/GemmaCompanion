@@ -285,3 +285,27 @@ Both replay logs contain `GEMMA_LOOK_DECISION: look_left` and `GAME_RESULT: PASS
 The human confirmed in chat: `yup! i saw both!` This confirms both the audible AT-CSP1 speech and physical OBSBOT movement requested in the immediately preceding question.
 
 Current status: M6 DONE. M7 is next.
+
+## M7 Glasses finder
+
+### JETSON — absent-glasses baseline preparation
+
+Command:
+
+```sh
+cd ~/gemma-companion && python3 scripts/prep_elderly_negative.py
+```
+
+Exit code: 0
+
+```text
+target: glasses; expected: absent
+directions: center,left,right,up,down
+frames: /home/iputra/gemma-companion/captures/sessions/capture-0173699ee662482c8a0a14aa3db3fffe.jpg; /home/iputra/gemma-companion/captures/sessions/capture-aa7134e2151b417f90462611080aaa7f.jpg; /home/iputra/gemma-companion/captures/sessions/capture-428b600bb0544a44a4fdf1f672889cdc.jpg; /home/iputra/gemma-companion/captures/sessions/capture-322d2ebb0957462bb54a41330f7c8675.jpg; /home/iputra/gemma-companion/captures/sessions/capture-70ede37d115f4ef89fae90b1b2272eee.jpg
+fixture: /home/iputra/gemma-companion/.runtime/elderly-negative.json
+result: PASS live five-direction sweep contains no visible glasses
+```
+
+This is preparation, not M7 acceptance evidence. The fixture remains ignored by git and will be re-evaluated during the final `make demo-elderly` verifier after three live positive runs.
+
+Current status: M7 IN_PROGRESS; awaiting physical placement of glasses outside the centered view.

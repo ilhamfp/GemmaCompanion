@@ -72,6 +72,38 @@ FINAL_ANSWER_SCHEMA = {
 
 AKINATOR_ACTION_SCHEMAS = [ASK_USER_SCHEMA, FINAL_ANSWER_SCHEMA]
 
+REPORT_FOUND_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "report_found",
+        "description": "Report clearly visible glasses with a plain furniture-relative location.",
+        "parameters": {
+            "type": "object",
+            "properties": {"location": {"type": "string"}},
+            "required": ["location"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+REPORT_NOT_FOUND_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "report_not_found",
+        "description": "Honestly finish after every search direction has been inspected without seeing glasses.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def look_schema(name: str) -> dict:
+    return next(schema for schema in LOOK_SCHEMAS if schema["function"]["name"] == name)
+
 
 def tool_name(tool_call: dict) -> str:
     return str((tool_call.get("function") or {}).get("name") or "")
