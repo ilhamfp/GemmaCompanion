@@ -659,3 +659,20 @@ airpods_repeat_1: PASS; direction=center; location=on the dark tabletop in the c
 airpods_repeat_2: PASS; direction=center; location=on the dark table; duration_seconds=5.489; log=/home/iputra/gemma-companion/logs/session-19700101-090316-974932.jsonl
 result: PASS final AirPods finder repeated 2/2 after verifier pass
 ```
+
+### JETSON — complete companion handoff
+
+The final integration check invoked the same text-to-Gemma-tool-to-physical-finder path used after live transcription. Exit code: 0.
+
+```text
+You: Find my AirPods.
+Gemma: You want me to find the small white Apple AirPods wireless-earbud charging case, is that right?
+Gemma: One moment.
+Gemma: Your small white Apple AirPods wireless-earbud charging case is on the black tabletop.
+action: find_found
+response: Your small white Apple AirPods wireless-earbud charging case is on the black tabletop.
+direction: center
+latency_seconds: 8.237
+companion_log: /home/iputra/gemma-companion/logs/companion-19700101-090512-869428.jsonl
+result: PASS companion tool handoff found the live AirPods
+```
