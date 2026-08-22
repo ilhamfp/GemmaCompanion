@@ -23,7 +23,10 @@ from demos.companion import (  # noqa: E402
     available_memory_bytes,
     parse_intent,
 )
-from demos.elderly import parse_narrated_look_action  # noqa: E402
+from demos.elderly import (  # noqa: E402
+    parse_narrated_look_action,
+    parse_narrated_not_found,
+)
 
 
 def _pcm(level: int, samples: int) -> bytes:
@@ -37,6 +40,8 @@ def _test_parser_and_segmenter() -> tuple[float, float]:
         "Left": ("look", "left"),
         "Please turn to the right": ("look", "right"),
         "What do you see?": ("describe", None),
+        "Volume to me. What are you seeing?": ("describe", None),
+        "Using the camera.": ("describe", None),
         "Look up and tell me what you see": ("look_and_describe", "up"),
         "Be quiet": ("stop", None),
         "Go to sleep": ("sleep", None),
@@ -44,6 +49,9 @@ def _test_parser_and_segmenter() -> tuple[float, float]:
         "Turn it up": ("volume_up", None),
         "Volume down": ("volume_down", None),
         "Is this a scam or not?": ("visual_question", None),
+        "Can you advise me? Is this tax a scam?": ("visual_question", None),
+        "Can you read the text inside that smartphone?": ("visual_question", None),
+        "What does it say?": ("visual_question", None),
         "How are you?": ("chat", None),
     }
     for phrase, wanted in expected.items():
@@ -96,6 +104,16 @@ def _test_narrated_finder_actions() -> None:
         raise AssertionError("finder accepted a narrated direction outside the bounded search order")
     if parse_narrated_look_action("I do not see a smartphone.", "look_right") is not None:
         raise AssertionError("finder invented a movement from evidence-only prose")
+    final_miss = (
+        "I have searched the center, left, right, up, and down. "
+        "I did not find the smartphone. Please check under the sofa."
+    )
+    if parse_narrated_not_found(final_miss, final_direction=True) != "report_not_found":
+        raise AssertionError("finder rejected Gemma's honest final narrated miss")
+    if parse_narrated_not_found(final_miss, final_direction=False) is not None:
+        raise AssertionError("finder accepted a narrated miss before completing its search")
+    if parse_narrated_not_found("The smartphone is on the table.", final_direction=True) is not None:
+        raise AssertionError("finder converted positive evidence into a miss")
 
 
 def main() -> int:
@@ -111,7 +129,10 @@ def main() -> int:
         f"peak_rms={peak_rms:.0f}"
     )
     print("latest_turn_wins: PASS; stale response discarded")
-    print("finder_narration: PASS; expected look accepted; mismatched look rejected")
+    print(
+        "finder_narration: PASS; expected look and final not-found accepted; "
+        "premature or mismatched actions rejected"
+    )
     if args.unit_only:
         print("result: PASS pure companion routing and audio segmentation")
         return 0

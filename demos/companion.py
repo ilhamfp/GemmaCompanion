@@ -111,20 +111,31 @@ def parse_intent(text: str) -> Intent:
         for phrase in (
             "what do you see",
             "what can you see",
+            "what are you seeing",
+            "what you seeing",
+            "what are you looking at",
             "describe what you see",
             "describe the room",
             "what is in front of you",
             "what's in front of you",
             "tell me what you see",
+            "tell me what you are seeing",
+            "tell me what you're seeing",
+            "use the camera",
+            "using the camera",
         )
     )
     asks_about_visible_content = any(
         phrase in normalized
         for phrase in (
             "read this",
+            "read the text",
+            "can you read",
             "what does this say",
+            "what does it say",
             "what does the message say",
             "is this a scam",
+            "a scam",
             "scam or not",
             "is this message safe",
             "look at this",

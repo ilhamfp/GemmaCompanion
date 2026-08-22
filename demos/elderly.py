@@ -91,6 +91,20 @@ def parse_narrated_look_action(model_text: str, expected_tool: str | None) -> st
     return expected_tool if narrated else None
 
 
+def parse_narrated_not_found(model_text: str, *, final_direction: bool) -> str | None:
+    """Accept an honest narrated miss only after the bounded search is complete."""
+
+    if not final_direction:
+        return None
+    negative_result = re.search(
+        r"\b(?:(?:did|could|can)\s+not|didn't|couldn't|can't|was\s+unable\s+to)\s+"
+        r"(?:find|see|locate)\b|\b(?:not\s+found|no\s+matching\s+object)\b",
+        model_text,
+        flags=re.IGNORECASE,
+    )
+    return "report_not_found" if negative_result else None
+
+
 class ElderlyFinder:
     def __init__(
         self,
@@ -264,6 +278,18 @@ Call exactly one supplied tool and do not invent a location."""
                 text=model_text,
             )
             return narrated_action, ""
+        narrated_not_found = parse_narrated_not_found(
+            model_text,
+            final_direction=next_tool is None,
+        )
+        if narrated_not_found is not None:
+            self.loop.log(
+                "PARSED_NARRATED_ACTION",
+                tool=narrated_not_found,
+                expected_tool="report_not_found",
+                text=model_text,
+            )
+            return narrated_not_found, ""
         raise AgentLoopError(f"Gemma returned no parseable finder action: {model_text!r}")
 
     def search_live(
