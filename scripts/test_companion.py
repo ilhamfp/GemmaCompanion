@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from agent.gemma import GemmaClient  # noqa: E402
 from audio.continuous import VoiceSegmenter  # noqa: E402
 from demos.companion import (  # noqa: E402
     MIN_AVAILABLE_BYTES,
@@ -22,8 +23,6 @@ from demos.companion import (  # noqa: E402
     CompanionResult,
     CompanionSession,
     available_memory_bytes,
-    asks_for_current_view,
-    parse_intent,
     preserves_target_identity,
 )
 from demos.elderly import (  # noqa: E402
@@ -35,49 +34,34 @@ from demos.elderly import (  # noqa: E402
     parse_trailing_search_action,
 )
 from PIL import Image  # noqa: E402
+from tools.registry import COMPANION_DECISION_SCHEMAS, COMPANION_TOOL_SCHEMAS  # noqa: E402
 
 
 def _pcm(level: int, samples: int) -> bytes:
     return array("h", [level] * samples).tobytes()
 
 
-def _test_parser_and_segmenter() -> tuple[float, float]:
+def _test_agent_tools_and_segmenter() -> tuple[float, float]:
+    names = [schema["function"]["name"] for schema in COMPANION_TOOL_SCHEMAS]
     expected = {
-        "Look left!": ("look", "left"),
-        "Look laugh": ("look", "left"),
-        "Left": ("look", "left"),
-        "Please turn to the right": ("look", "right"),
-        "What do you see?": ("describe", None),
-        "Volume to me. What are you seeing?": ("describe", None),
-        "Using the camera.": ("describe", None),
-        "Look up and tell me what you see": ("look_and_describe", "up"),
-        "Be quiet": ("stop", None),
-        "Go to sleep": ("sleep", None),
-        "Wake up": ("wake", None),
-        "Turn it up": ("volume_up", None),
-        "Volume down": ("volume_down", None),
-        "Is this a scam or not?": ("visual_question", None),
-        "Can you advise me? Is this tax a scam?": ("visual_question", None),
-        "Can you read the text inside that smartphone?": ("visual_question", None),
-        "What does it say?": ("visual_question", None),
-        "What color is the object I'm holding?": ("visual_question", None),
-        "Can you identify this object?": ("visual_question", None),
-        "What is written on this label?": ("visual_question", None),
-        "What is this?": ("visual_question", None),
-        "What am I holding?": ("visual_question", None),
-        "How are you?": ("chat", None),
-        "Why is the sky blue?": ("chat", None),
+        "look_left",
+        "look_right",
+        "look_up",
+        "look_down",
+        "look_center",
+        "inspect_view",
+        "find_object",
+        "make_voice_louder",
+        "make_voice_softer",
+        "set_volume",
+        "cancel_current_response",
+        "sleep",
     }
-    for phrase, wanted in expected.items():
-        intent = parse_intent(phrase)
-        actual = (intent.kind, intent.direction)
-        if actual != wanted:
-            raise AssertionError(f"{phrase!r} parsed as {actual}, expected {wanted}")
-    volume_intent = parse_intent("Set volume to 92 percent")
-    if volume_intent.kind != "volume_set" or volume_intent.value != 92:
-        raise AssertionError(f"numeric volume parsed incorrectly: {volume_intent}")
-    if asks_for_current_view("is this medication safe", {"is", "this", "medication", "safe"}):
-        raise AssertionError("non-visual high-stakes question was treated as a camera request")
+    if set(names) != expected or len(names) != len(expected):
+        raise AssertionError(f"companion tool registry mismatch: {names!r}")
+    source = (REPO_ROOT / "demos" / "companion.py").read_text(encoding="utf-8")
+    if "def parse_intent" in source or "direction_aliases" in source:
+        raise AssertionError("a hard-coded phrase/direction router remains in companion.py")
 
     segmenter = VoiceSegmenter()
     muted = _pcm(100, segmenter.chunk_bytes // 2)
@@ -105,6 +89,31 @@ def _test_latest_turn_wins() -> None:
     session._publish_result(result, stale, speak=False)
     if session.last_result is not None:
         raise AssertionError("a stale response was published")
+
+
+def _test_raw_tool_stream_parser() -> None:
+    samples = (
+        (
+            "<|tool_call>call look_left{}<tool_call|>\ninspect_view",
+            ["look_left", "inspect_view"],
+            {},
+        ),
+        (
+            'find_object{target:<|"|>small white AirPods charging case<|"|>}',
+            ["find_object"],
+            {"target": "small white AirPods charging case"},
+        ),
+        ("set_volume(percent=73)", ["set_volume"], {"percent": 73}),
+        ("look_center.\nI have returned to neutral.", ["look_center"], {}),
+    )
+    for raw, expected_names, expected_arguments in samples:
+        calls = GemmaClient._fallback_tool_calls(raw, COMPANION_DECISION_SCHEMAS)
+        names = [str((call.get("function") or {}).get("name")) for call in calls]
+        if names != expected_names:
+            raise AssertionError(f"raw tool stream parsed as {names!r}: {raw!r}")
+        arguments = (calls[-1].get("function") or {}).get("arguments") or {}
+        if expected_arguments and arguments != expected_arguments:
+            raise AssertionError(f"raw tool arguments parsed as {arguments!r}: {raw!r}")
 
 
 def _test_narrated_finder_actions() -> None:
@@ -191,17 +200,20 @@ def main() -> int:
     parser.add_argument("--unit-only", action="store_true")
     args = parser.parse_args()
 
-    segment_seconds, peak_rms = _test_parser_and_segmenter()
+    segment_seconds, peak_rms = _test_agent_tools_and_segmenter()
     _test_latest_turn_wins()
+    _test_raw_tool_stream_parser()
     _test_narrated_finder_actions()
     _test_edge_detail_sheet()
     _test_target_identity()
     _test_detail_candidate_consistency()
     print(
-        f"parser_segmenter: PASS; segment_seconds={segment_seconds:.3f}; "
+        f"agent_tools_segmenter: PASS; tools={len(COMPANION_TOOL_SCHEMAS)}; "
+        f"segment_seconds={segment_seconds:.3f}; "
         f"peak_rms={peak_rms:.0f}"
     )
     print("latest_turn_wins: PASS; stale response discarded")
+    print("raw_tool_stream: PASS; native, bare, positional, and argument forms recovered")
     print(
         "finder_narration: PASS; expected look and final not-found accepted; "
         "premature or mismatched actions rejected"
@@ -210,7 +222,7 @@ def main() -> int:
     print("target_identity: PASS; product name and object type cannot be discarded")
     print("detail_consistency: PASS; independent evidence rejects color conflicts")
     if args.unit_only:
-        print("result: PASS pure companion routing and audio segmentation")
+        print("result: PASS phrase-free agent tool contract and audio segmentation")
         return 0
 
     subprocess.run([str(REPO_ROOT / "scripts" / "ensure_gemma.sh")], check=True)
@@ -226,22 +238,24 @@ def main() -> int:
         boot_seconds = time.monotonic() - boot_started
 
         move_results = [
-            session.handle_text("look left"),
-            session.handle_text("look right"),
-            session.handle_text("look center"),
+            session.handle_text("Aim your gaze toward the port side."),
+            session.handle_text("Sweep your attention toward starboard."),
+            session.handle_text("Return your gaze to its neutral forward pose."),
         ]
         if [result.action for result in move_results] != ["look_left", "look_right", "look_center"]:
             raise AssertionError("direct movement routing failed")
         max_move = max(result.latency_seconds for result in move_results)
-        if max_move >= 1.5:
+        if max_move >= 3.0:
             raise AssertionError(f"direct movement took {max_move:.3f}s")
 
-        visual = session.handle_text("what do you see?")
-        if visual.action != "describe" or not visual.response or not visual.image_path:
+        visual = session.handle_text(
+            "Give me a concise account of the scene currently before the lens."
+        )
+        if visual.action != "visual_question" or not visual.response or not visual.image_path:
             raise AssertionError("fresh visual description was incomplete")
         if not Path(visual.image_path).is_file():
             raise AssertionError(f"fresh visual frame is missing: {visual.image_path}")
-        if visual.latency_seconds >= 5.0:
+        if visual.latency_seconds >= 8.0:
             raise AssertionError(f"visual response took {visual.latency_seconds:.3f}s")
 
         available = available_memory_bytes()
@@ -252,7 +266,7 @@ def main() -> int:
 
     print(f"boot_readiness: PASS; fresh_scene_seconds={boot_seconds:.3f}; cue={READY_CUE}")
     print(
-        "direct_moves: PASS; sequence=look_left,look_right,look_center; "
+        "agentic_moves: PASS; paraphrase_sequence=look_left,look_right,look_center; "
         f"max_latency_seconds={max_move:.3f}"
     )
     print(
@@ -261,7 +275,7 @@ def main() -> int:
     )
     print(f"fresh_frame: {visual.image_path}")
     print(f"available_memory_mib: {available / (1024 * 1024):.1f}")
-    print("result: PASS continuous companion routing, physical PTZ, and fresh vision")
+    print("result: PASS phrase-free agent routing, physical PTZ, and fresh vision")
     return 0
 
 

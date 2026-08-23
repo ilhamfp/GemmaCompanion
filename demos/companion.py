@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import threading
@@ -19,7 +20,11 @@ from audio.volume import VOLUME_STEP, adjust_volume, set_volume
 from camera.capture import CameraCaptureError, capture_image
 from camera.obsbot import look_center, look_down, look_left, look_right, look_up
 from demos.elderly import ElderlyFinder, FinderCancelled
-from tools.registry import FIND_OBJECT_SCHEMA, INSPECT_VIEW_SCHEMA, tool_name
+from tools.registry import (
+    COMPANION_DECISION_SCHEMAS,
+    MOVEMENT_COMPLETION_SCHEMAS,
+    tool_name,
+)
 
 MIN_AVAILABLE_BYTES = 500 * 1024 * 1024
 READY_CUE = "Hi, I'm Gemma!"
@@ -29,12 +34,62 @@ Do not mention pixels, the image, or anything outside the view. Do not invent un
 CONVERSATION_PROMPT = """You are Gemma Companion, an offline embodied assistant on a Jetson.
 Reply in one or two short spoken sentences with normal punctuation and no markdown.
 Never claim to see something unless it came from a fresh camera observation in this conversation.
-When the user asks you to find or locate a misplaced object, call the supplied find_object tool.
-In its target argument, preserve the requested identity and add concise common visual traits such as
-object type, shape, and color when you know them; never replace it with a different product.
-When the user asks about a currently visible object, something they are holding or showing, its color
-or identity, or writing on a label or screen, call inspect_view before answering. Never answer such a
-question from general knowledge or an earlier frame."""
+Use the supplied tools whenever the request needs a physical action, a device setting, a systematic
+search, or current visual evidence. Select tools from meaning and context, not memorized wording.
+Never merely promise or narrate an available action and never ask for details an appropriate tool does
+not require: call the tool instead. Infer tool arguments that are clear from ordinary language, including
+relative directions and quantities, rather than asking the user to repeat them.
+When one request asks you both to turn and to observe or report from there, call the appropriate
+movement function followed by inspect_view in the same action-selection response.
+For find_object, preserve the requested identity and add only stable visual traits you actually know.
+Your audible voice comes from the physical USB speaker, so requests about how loud or soft you sound
+are device-setting requests, not changes to writing style.
+Never claim that an action happened until its tool succeeds. If no tool is needed, answer normally."""
+AGENT_DECISION_PROMPT = f"""{CONVERSATION_PROMPT}
+For this action-selection turn, call one or more supplied functions and produce no prose.
+Call respond_normally only when the request is fully answerable without a physical action, current
+camera evidence, an object search, or a device setting. The live camera is already available, so never
+ask for an image or ask the user to show a present or referenced thing. Treat anything they say they
+are currently presenting, holding, showing, pointing at, or asking about in their surroundings as
+already available to inspect_view. Tool arguments must be inferred from ordinary language.
+General-knowledge, factual, and hypothetical questions with no
+reference to the user's current surroundings must call respond_normally, even when their subject could
+theoretically be photographed."""
+MOVEMENT_COMPLETION_PROMPT = """You are the completion checker after a physical camera movement succeeded.
+Call inspect_view only when fulfilling the original request still requires fresh visual evidence from the new pose.
+Call finish_movement when the original request asked only to reposition or aim, with no camera-derived answer.
+Classify the whole meaning, including any clause after the movement. Seeing, describing, reporting a scene,
+reading text, identifying, comparing, checking, and answering about the destination require inspect_view.
+Merely naming a visible destination does not.
+Examples:
+- Original request: Point toward the doorway. -> finish_movement
+- Original request: Point toward the doorway and tell me whether it is open. -> inspect_view
+- Original request: Face the desk. -> finish_movement
+- Original request: Face the desk, then summarize what is on it. -> inspect_view
+Call exactly one supplied function and produce no prose."""
+TOOL_REPAIR_PROMPT = """The previous assistant text did not execute anything. Map the original request
+to the function that can actually fulfill it.
+A request about a concrete thing in the user's present environment cannot be answered from language
+knowledge. If the user refers to a current thing deictically or says they hold, show, present, point at,
+read, see, or ask what it is, inspect_view is mandatory. The live camera supplies the image automatically;
+asking the user to provide or clarify it is forbidden.
+For example, a general question about how barcode scanners work uses respond_normally, while a question
+asking what this device is uses inspect_view. General facts about colors use respond_normally, while the
+color of the item the user is holding uses inspect_view.
+If the prior text narrated a physical action, call that action. Use respond_normally only for
+language-knowledge requests with no current physical referent. Call exactly one function and no prose."""
+EVIDENCE_SOURCE_PROMPT = """Classify the evidence source needed by the user's request. Output exactly
+CAMERA or KNOWLEDGE.
+CAMERA means a correct answer requires fresh pixels from the user's live environment: a current object,
+scene, appearance, writing, screen, label, or communication being physically shown, held, presented,
+pointed at, nearby, or referenced deictically.
+KNOWLEDGE means no fresh physical evidence is needed: general facts, hypotheticals, ordinary conversation,
+or recalling established conversation.
+Examples:
+- Is the email on the phone I am showing fraudulent? -> CAMERA
+- What warning signs are common in fraudulent emails? -> KNOWLEDGE
+- Which color is this item in my hand? -> CAMERA
+- Why do leaves look green? -> KNOWLEDGE"""
 VISUAL_QUESTION_PROMPT = """Answer the user's question using only this fresh camera view.
 If a phone or message is shown, read only text that is genuinely legible.
 For a suspected scam, explain the concrete warning signs, avoid claiming certainty when text is unclear,
@@ -79,42 +134,6 @@ def preserves_target_identity(original: str, candidate: str) -> bool:
     return bool(candidate) and len(candidate) <= 160 and identity_tokens <= candidate_tokens
 
 
-def asks_for_current_view(normalized: str, words: set[str]) -> bool:
-    """Recognize general deictic questions that require a fresh camera frame."""
-
-    deictic = bool(words & {"this", "that", "these", "those"})
-    physical_reference = bool(words & {"holding", "showing", "wearing"}) or any(
-        phrase in normalized
-        for phrase in ("in my hand", "in front of you", "in front of the camera")
-    )
-    visible_noun = bool(
-        words & {"object", "item", "thing", "label", "screen", "sign", "message", "text"}
-    )
-    perception_words = {
-        "color",
-        "colour",
-        "identify",
-        "recognize",
-        "recognise",
-        "read",
-        "written",
-    }
-    direct_deictic_question = bool(
-        re.search(r"\b(?:what|who)\s+(?:is|are)\s+(?:this|that|these|those)\b", normalized)
-    )
-    asks_about_traits = bool(words & perception_words) and (
-        deictic or physical_reference or visible_noun
-    )
-    return direct_deictic_question or physical_reference or asks_about_traits
-
-
-@dataclass(frozen=True)
-class Intent:
-    kind: str
-    direction: str | None = None
-    value: int | None = None
-
-
 @dataclass(frozen=True)
 class CompanionResult:
     action: str
@@ -122,97 +141,6 @@ class CompanionResult:
     direction: str
     image_path: str | None
     latency_seconds: float
-
-
-def parse_intent(text: str) -> Intent:
-    """Route safety- and latency-critical commands without a model round trip."""
-
-    normalized = " ".join(re.findall(r"[a-z']+", text.casefold()))
-    words = set(normalized.split())
-    if words & {"stop", "cancel"} or "be quiet" in normalized or "shut up" in normalized:
-        return Intent("stop")
-    if "go to sleep" in normalized or "stop listening" in normalized:
-        return Intent("sleep")
-    if "wake up" in normalized or "start listening" in normalized:
-        return Intent("wake")
-
-    volume_match = re.search(r"\bvolume(?:\s+(?:to|at))?\s+(\d{1,3})\b", text.casefold())
-    if volume_match:
-        return Intent("volume_set", value=int(volume_match.group(1)))
-    if (
-        "volume up" in normalized
-        or "speak louder" in normalized
-        or "make it louder" in normalized
-        or "turn it up" in normalized
-    ):
-        return Intent("volume_up")
-    if (
-        "volume down" in normalized
-        or "speak quieter" in normalized
-        or "make it quieter" in normalized
-        or "turn it down" in normalized
-    ):
-        return Intent("volume_down")
-
-    direction_aliases = {
-        "left": {"left", "laugh", "loft"},
-        "right": {"right", "write"},
-        "up": {"up"},
-        "down": {"down"},
-        "center": {"center", "centre"},
-    }
-    direction = next(
-        (
-            candidate
-            for candidate, aliases in direction_aliases.items()
-            if words & aliases
-        ),
-        None,
-    )
-    movement_words = {"look", "turn", "face", "move", "point"}
-    asks_to_see = any(
-        phrase in normalized
-        for phrase in (
-            "what do you see",
-            "what can you see",
-            "what are you seeing",
-            "what you seeing",
-            "what are you looking at",
-            "describe what you see",
-            "describe the room",
-            "what is in front of you",
-            "what's in front of you",
-            "tell me what you see",
-            "tell me what you are seeing",
-            "tell me what you're seeing",
-            "use the camera",
-            "using the camera",
-        )
-    )
-    asks_about_visible_content = any(
-        phrase in normalized
-        for phrase in (
-            "read this",
-            "read the text",
-            "can you read",
-            "what does this say",
-            "what does it say",
-            "what does the message say",
-            "is this a scam",
-            "a scam",
-            "scam or not",
-            "is this message safe",
-            "look at this",
-        )
-    ) or asks_for_current_view(normalized, words)
-    if direction and (words & movement_words or len(words) == 1):
-        return Intent("look_and_describe" if asks_to_see else "look", direction)
-    if asks_about_visible_content:
-        return Intent("visual_question")
-    if asks_to_see:
-        return Intent("describe")
-    return Intent("chat")
-
 
 class CompanionSession:
     """Latest-turn-wins session coordinating mic, speech, camera, and Gemma."""
@@ -226,12 +154,16 @@ class CompanionSession:
         gemma: GemmaClient | None = None,
         speaker: InterruptibleSpeech | None = None,
         mic: ContinuousMicrophone | None = None,
+        speech_mode: str | None = None,
     ) -> None:
         self.speech_enabled = speech
         self.microphone_enabled = microphone
         self.gemma = gemma or GemmaClient()
         self.speaker = speaker or InterruptibleSpeech()
         self.mic = mic or ContinuousMicrophone(on_speech_start=self._on_speech_start)
+        self.speech_mode = (speech_mode or os.environ.get("GEMMA_SPEECH_MODE", "whisper")).strip().casefold()
+        if self.speech_mode not in {"direct", "whisper"}:
+            raise ValueError("GEMMA_SPEECH_MODE must be 'direct' or 'whisper'")
         self._stop = threading.Event()
         self._turn_lock = threading.Lock()
         self._camera_lock = threading.Lock()
@@ -373,10 +305,15 @@ class CompanionSession:
 
     def run_forever(self, *, announce_scene: bool = True) -> None:
         self.start(announce_scene=announce_scene)
+        health_interval = float(os.environ.get("GEMMA_HEALTH_INTERVAL_SECONDS", "5"))
+        next_health_check = time.monotonic() + health_interval
         try:
             while not self._stop.wait(0.5):
                 if self.microphone_enabled and self.mic.last_error is not None:
                     raise RuntimeError(f"continuous microphone failed: {self.mic.last_error}")
+                if time.monotonic() >= next_health_check:
+                    self.gemma.health()
+                    next_health_check = time.monotonic() + health_interval
         finally:
             self.stop()
 
@@ -389,7 +326,7 @@ class CompanionSession:
         return token
 
     def handle_text(self, text: str, token: int | None = None) -> CompanionResult:
-        """Synchronously execute one transcript; direct commands bypass Gemma."""
+        """Let Gemma interpret and execute one text turn through the shared tool registry."""
 
         started = time.monotonic()
         active_token = self._new_turn() if token is None else token
@@ -397,66 +334,23 @@ class CompanionSession:
         if not clean:
             raise ValueError("transcript must not be empty")
         print(f"You: {clean}", flush=True)
-        intent = parse_intent(clean)
-        self._log("TRANSCRIPT", turn=active_token, text=clean, intent=intent.kind)
+        self._log("TRANSCRIPT", turn=active_token, text=clean, routing="gemma_tools")
+        return self._agent_turn(clean, None, active_token, started)
 
-        if intent.kind == "stop":
-            self.speaker.interrupt()
-            result = self._result("stop", "Stopped.", None, started)
-            self._publish_result(result, active_token, speak=False)
-            return result
-        if intent.kind == "sleep":
-            self._asleep = True
-            result = self._result("sleep", "Going idle. Say wake up when you need me.", None, started)
-            self._publish_result(result, active_token)
-            return result
-        if intent.kind == "wake":
-            self._asleep = False
-            result = self._result("wake", "I'm awake.", None, started)
-            self._publish_result(result, active_token)
-            return result
-        if intent.kind in {"volume_set", "volume_up", "volume_down"}:
-            if intent.kind == "volume_set":
-                if intent.value is None or not 0 <= intent.value <= 100:
-                    result = self._result(
-                        "volume_invalid",
-                        "Please choose a volume from zero to one hundred percent.",
-                        None,
-                        started,
-                    )
-                    self._publish_result(result, active_token)
-                    return result
-                volume = set_volume(intent.value)
-            else:
-                delta = VOLUME_STEP if intent.kind == "volume_up" else -VOLUME_STEP
-                volume = adjust_volume(delta)
-            result = self._result(
-                intent.kind,
-                f"Volume {volume} percent.",
-                None,
-                started,
-            )
-            self._publish_result(result, active_token)
-            return result
-        if self._asleep:
-            result = self._result("ignored_asleep", "", None, started)
-            self._publish_result(result, active_token, speak=False)
-            return result
-        if intent.kind in {"look", "look_and_describe"}:
-            assert intent.direction is not None
-            self._move(intent.direction, active_token)
-            if intent.kind == "look":
-                result = self._result(
-                    f"look_{intent.direction}", f"Looking {intent.direction}.", None, started
-                )
-                self._publish_result(result, active_token)
-                return result
-            return self._describe(active_token, started)
-        if intent.kind == "describe":
-            return self._describe(active_token, started)
-        if intent.kind == "visual_question":
-            return self._answer_visual(clean, active_token, started)
-        return self._chat(clean, active_token, started)
+    def handle_audio(
+        self,
+        wav_path: str,
+        token: int | None = None,
+        *,
+        started: float | None = None,
+    ) -> CompanionResult:
+        """Let Gemma understand a WAV and select tools in the same native multimodal call."""
+
+        active_token = self._new_turn() if token is None else token
+        turn_started = time.monotonic() if started is None else started
+        self._log("DIRECT_AUDIO_REQUEST", turn=active_token, routing="gemma_audio_tools")
+        print("You: [direct audio]", flush=True)
+        return self._agent_turn(None, wav_path, active_token, turn_started)
 
     def _spawn(self, target, *args) -> threading.Thread:
         def run() -> None:
@@ -484,7 +378,24 @@ class CompanionSession:
                 continue
             with self._turn_lock:
                 token = self._capture_turn
-            self._transcribe_segment(segment, token)
+            if self.speech_mode == "direct":
+                self._spawn(self._handle_direct_segment, segment, token)
+            else:
+                self._transcribe_segment(segment, token)
+
+    def _handle_direct_segment(self, segment: VoiceSegment, token: int) -> None:
+        self.last_segment_ended_at = segment.ended_at
+        self._log(
+            "DIRECT_AUDIO_SEGMENT",
+            turn=token,
+            utterance_seconds=round(segment.duration_seconds, 3),
+            peak_rms=round(segment.peak_rms, 1),
+        )
+        with temporary_segment_wav(segment) as path:
+            if self._is_current(token):
+                self.handle_audio(path, token, started=segment.ended_at)
+            else:
+                self._log("STALE_AUDIO_DISCARDED", turn=token)
 
     def _transcribe_segment(self, segment: VoiceSegment, token: int) -> None:
         self.last_segment_ended_at = segment.ended_at
@@ -587,7 +498,15 @@ class CompanionSession:
         self._publish_result(result, token)
         return result
 
-    def _answer_visual(self, question: str, token: int, started: float) -> CompanionResult:
+    def _answer_visual(
+        self,
+        question: str | None,
+        token: int,
+        started: float,
+        *,
+        audio_path: str | None = None,
+        action: str = "visual_question",
+    ) -> CompanionResult:
         if available_memory_bytes() < MIN_AVAILABLE_BYTES:
             result = self._result(
                 "visual_question_refused_low_memory",
@@ -600,6 +519,11 @@ class CompanionSession:
         with self._camera_lock:
             direction = self._direction
             image_path = self._capture_fresh(Path.cwd() / "captures" / "companion")
+        request = (
+            f"User's question: {question}"
+            if question is not None
+            else "The attached audio contains the user's original request."
+        )
         text, _ = self.gemma.step(
             [
                 {"role": "system", "content": CONVERSATION_PROMPT},
@@ -607,13 +531,16 @@ class CompanionSession:
                     "role": "user",
                     "content": (
                         f"Current physical camera direction: {direction}.\n"
-                        f"User's question: {question}\n{VISUAL_QUESTION_PROMPT}"
+                        f"{request}\n{VISUAL_QUESTION_PROMPT}"
                     ),
                 },
             ],
             [image_path],
+            audios=[audio_path] if audio_path else None,
+            max_tokens=56,
         )
-        result = self._result("visual_question", text, image_path, started)
+        result = self._result(action, text, image_path, started)
+        self._remember_turn(question, text, token)
         self._publish_result(result, token)
         return result
 
@@ -626,6 +553,67 @@ class CompanionSession:
         if not self._is_current(token):
             raise FinderCancelled("a newer user turn cancelled finder speech")
 
+    def _movement_needs_inspection(
+        self,
+        request: str | None,
+        audio_path: str | None,
+        direction: str,
+        token: int,
+    ) -> bool:
+        user_content = (
+            f"Original request: {request}\nCompleted direction: {direction}"
+            if request is not None
+            else f"The attached audio is the original request.\nCompleted direction: {direction}"
+        )
+        response, calls = self.gemma.step(
+            [
+                {"role": "system", "content": MOVEMENT_COMPLETION_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            tools=MOVEMENT_COMPLETION_SCHEMAS,
+            audios=[audio_path] if audio_path else None,
+            max_tokens=16,
+            tool_choice="required",
+        )
+        selected = [tool_name(call) for call in calls]
+        self._log(
+            "MOVEMENT_COMPLETION_DECISION",
+            turn=token,
+            direction=direction,
+            tools=selected,
+            model_latency_seconds=round(self.gemma.last_latency_seconds, 3),
+            text=" ".join(response.split()),
+        )
+        return "inspect_view" in selected
+
+    def _requires_fresh_camera(
+        self,
+        request: str | None,
+        audio_path: str | None,
+        token: int,
+    ) -> bool:
+        user_content = (
+            request
+            if request is not None
+            else "Classify the request in the attached audio."
+        )
+        response, _ = self.gemma.step(
+            [
+                {"role": "system", "content": EVIDENCE_SOURCE_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            audios=[audio_path] if audio_path else None,
+            max_tokens=4,
+        )
+        classification = response.strip().split(maxsplit=1)[0].strip("`.,:").casefold()
+        self._log(
+            "EVIDENCE_SOURCE_DECISION",
+            turn=token,
+            classification=classification,
+            model_latency_seconds=round(self.gemma.last_latency_seconds, 3),
+        )
+        return classification == "camera"
+
     def _find_object(
         self,
         request: str,
@@ -633,40 +621,12 @@ class CompanionSession:
         token: int,
         started: float,
     ) -> CompanionResult:
-        original_target = target
-        try:
-            enriched, _ = self.gemma.step(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Rewrite an object name as a concise visual search phrase. Preserve its "
-                            "exact product identity and object type. Add only stable, commonly known "
-                            "visual traits such as size, shape, color, and form. Reply with the phrase "
-                            "only, without markdown or a sentence."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"User request: {request}\nObject name: {target}",
-                    },
-                ]
-            )
-            if not self._is_current(token):
-                raise FinderCancelled("a newer user turn cancelled target enrichment")
-            candidate = " ".join(enriched.split()).strip(" `\"'.")
-            if preserves_target_identity(target, candidate):
-                target = candidate
-        except FinderCancelled:
-            raise
-        except Exception as exc:
-            self._log("FINDER_TARGET_ENRICHMENT_FALLBACK", turn=token, error=str(exc))
         self._log(
             "FINDER_HANDOFF",
             turn=token,
             request=request,
-            original_target=original_target,
             target=target,
+            target_source="gemma_tool_argument",
         )
         finder = ElderlyFinder(
             speech=False,
@@ -711,47 +671,267 @@ class CompanionSession:
             gemma_moves=found.gemma_moves,
             location=found.location,
         )
+        self._remember_turn(request, response, token)
         self._publish_result(result, token, speak=False)
         return result
 
-    def _chat(self, text: str, token: int, started: float) -> CompanionResult:
+    def _agent_turn(
+        self,
+        text: str | None,
+        audio_path: str | None,
+        token: int,
+        started: float,
+    ) -> CompanionResult:
         if available_memory_bytes() < MIN_AVAILABLE_BYTES:
             result = self._result(
-                "chat_refused_low_memory",
+                "agent_refused_low_memory",
                 "I don't have enough free memory to answer safely.",
                 None,
                 started,
             )
             self._publish_result(result, token)
             return result
-        messages = [
-            {"role": "system", "content": CONVERSATION_PROMPT},
-            *self._conversation[-6:],
-            {"role": "user", "content": text},
-        ]
-        response, calls = self.gemma.step(
-            messages,
-            tools=[FIND_OBJECT_SCHEMA, INSPECT_VIEW_SCHEMA],
+        if self._asleep:
+            self._asleep = False
+            self._log("WAKE_ON_SPEECH", turn=token)
+        state = f"Physical state: awake; camera direction: {self.direction}."
+        user_request = (
+            f"{state}\nUser request: {text}"
+            if text is not None
+            else f"{state}\nTreat the attached audio as the user's request."
         )
-        if calls:
-            selected_tool = tool_name(calls[0])
-            if selected_tool == "find_object":
-                arguments = (calls[0].get("function") or {}).get("arguments") or {}
-                target = " ".join(str(arguments.get("target") or "").split())
-                if target:
-                    return self._find_object(text, target, token, started)
-            if selected_tool == "inspect_view":
-                return self._answer_visual(text, token, started)
-        if self._is_current(token):
-            self._conversation.extend(
-                [
-                    {"role": "user", "content": text},
-                    {"role": "assistant", "content": response},
-                ]
+        messages: list[dict] = [
+            {"role": "system", "content": AGENT_DECISION_PROMPT},
+            {
+                "role": "user",
+                "content": user_request,
+            },
+        ]
+        moved: list[str] = []
+        for round_index in range(1, 3):
+            response, calls = self.gemma.step(
+                messages,
+                tools=COMPANION_DECISION_SCHEMAS,
+                audios=[audio_path] if audio_path else None,
+                max_tokens=24,
+                tool_choice="required",
             )
-        result = self._result("chat", response, None, started)
+            if not self._is_current(token):
+                result = self._result("stale_cancelled", "", None, started)
+                self._publish_result(result, token, speak=False)
+                return result
+            calls = calls[:6]
+            selected = [tool_name(call) for call in calls]
+            self._log(
+                "AGENT_DECISION",
+                turn=token,
+                round=round_index,
+                input_mode="audio" if audio_path else "text",
+                tools=selected,
+                model_latency_seconds=round(self.gemma.last_latency_seconds, 3),
+                text=" ".join(response.split()),
+            )
+            if not calls:
+                if round_index == 1:
+                    messages = [
+                        {"role": "system", "content": AGENT_DECISION_PROMPT},
+                        {
+                            "role": "user",
+                            "content": (
+                                text
+                                if text is not None
+                                else "Treat the attached audio as the user's original request."
+                            ),
+                        },
+                        {
+                            "role": "assistant",
+                            "content": response,
+                        },
+                        {
+                            "role": "user",
+                            "content": TOOL_REPAIR_PROMPT,
+                        },
+                    ]
+                    continue
+                break
+
+            assistant_message: dict = {"role": "assistant", "content": response}
+            normalized_calls: list[dict] = []
+            for index, original_call in enumerate(calls, start=1):
+                call = dict(original_call)
+                call.setdefault("id", f"companion-{token}-{round_index}-{index}")
+                call.setdefault("type", "function")
+                normalized_calls.append(call)
+            assistant_message["tool_calls"] = normalized_calls
+            messages.append(assistant_message)
+
+            inspect_requested = False
+            made_progress = False
+            for call in normalized_calls:
+                selected_tool = tool_name(call)
+                arguments = (call.get("function") or {}).get("arguments") or {}
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                self._log(
+                    "AGENT_TOOL_CALL",
+                    turn=token,
+                    round=round_index,
+                    tool=selected_tool,
+                    arguments=arguments,
+                )
+                if selected_tool.startswith("look_"):
+                    direction = selected_tool.removeprefix("look_")
+                    if direction in {"left", "right", "up", "down", "center"}:
+                        self._move(direction, token)
+                        moved.append(direction)
+                        made_progress = True
+                    continue
+                if selected_tool == "inspect_view":
+                    inspect_requested = True
+                    made_progress = True
+                    continue
+                if selected_tool == "find_object":
+                    target = " ".join(str(arguments.get("target") or "").split())
+                    if target:
+                        request = text or f"Find {target}"
+                        return self._find_object(request, target, token, started)
+                    continue
+                if selected_tool == "respond_normally":
+                    needs_camera = self._requires_fresh_camera(text, audio_path, token)
+                    if not self._is_current(token):
+                        result = self._result("stale_cancelled", "", None, started)
+                        self._publish_result(result, token, speak=False)
+                        return result
+                    if needs_camera:
+                        return self._answer_visual(
+                            text,
+                            token,
+                            started,
+                            audio_path=audio_path,
+                        )
+                    final_text, _ = self.gemma.step(
+                        [
+                            {"role": "system", "content": CONVERSATION_PROMPT},
+                            *self._conversation[-6:],
+                            {
+                                "role": "user",
+                                "content": (
+                                    text
+                                    if text is not None
+                                    else "Answer the request in the attached audio."
+                                ),
+                            },
+                        ],
+                        audios=[audio_path] if audio_path else None,
+                        max_tokens=64,
+                    )
+                    if not self._is_current(token):
+                        result = self._result("stale_cancelled", "", None, started)
+                        self._publish_result(result, token, speak=False)
+                        return result
+                    self._remember_turn(text, final_text, token)
+                    result = self._result("chat", final_text, None, started)
+                    self._publish_result(result, token)
+                    return result
+                if selected_tool == "cancel_current_response":
+                    self.speaker.interrupt()
+                    result = self._result("stop", "Stopped.", None, started)
+                    self._remember_turn(text, result.response, token)
+                    self._publish_result(result, token, speak=False)
+                    return result
+                if selected_tool == "sleep":
+                    self._asleep = True
+                    result = self._result(
+                        "sleep",
+                        "Going idle. The next time you speak, I'll wake up.",
+                        None,
+                        started,
+                    )
+                    self._remember_turn(text, result.response, token)
+                    self._publish_result(result, token)
+                    return result
+                if selected_tool in {"make_voice_louder", "make_voice_softer", "set_volume"}:
+                    if selected_tool == "set_volume":
+                        try:
+                            requested = int(arguments.get("percent"))
+                        except (TypeError, ValueError):
+                            requested = -1
+                        if not 0 <= requested <= 100:
+                            result = self._result(
+                                "volume_invalid",
+                                "Please choose a volume from zero to one hundred percent.",
+                                None,
+                                started,
+                            )
+                            self._publish_result(result, token)
+                            return result
+                        volume = set_volume(requested)
+                        action = "volume_set"
+                    else:
+                        direction = "up" if selected_tool == "make_voice_louder" else "down"
+                        delta = VOLUME_STEP if direction == "up" else -VOLUME_STEP
+                        volume = adjust_volume(delta)
+                        action = f"volume_{direction}"
+                    result = self._result(action, f"Volume {volume} percent.", None, started)
+                    self._remember_turn(text, result.response, token)
+                    self._publish_result(result, token)
+                    return result
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps({"ok": False, "error": "unsupported tool"}),
+                    }
+                )
+
+            if inspect_requested:
+                action = f"look_{moved[-1]}_and_inspect" if moved else "visual_question"
+                return self._answer_visual(
+                    text,
+                    token,
+                    started,
+                    audio_path=audio_path,
+                    action=action,
+                )
+            if made_progress:
+                needs_inspection = bool(moved) and self._movement_needs_inspection(
+                    text, audio_path, moved[-1], token
+                )
+                if not self._is_current(token):
+                    result = self._result("stale_cancelled", "", None, started)
+                    self._publish_result(result, token, speak=False)
+                    return result
+                if needs_inspection:
+                    return self._answer_visual(
+                        text,
+                        token,
+                        started,
+                        audio_path=audio_path,
+                        action=f"look_{moved[-1]}_and_inspect",
+                    )
+                response = f"Looking {moved[-1]}." if moved else "Done."
+                action = f"look_{moved[-1]}" if moved else "agent_action"
+                self._remember_turn(text, response, token)
+                result = self._result(action, response, None, started)
+                self._publish_result(result, token)
+                return result
+            break
+
+        response = f"Looking {moved[-1]}." if moved else "I couldn't safely execute that request."
+        action = f"look_{moved[-1]}" if moved else "agent_limit"
+        self._remember_turn(text, response, token)
+        result = self._result(action, response, None, started)
         self._publish_result(result, token)
         return result
+
+    def _remember_turn(self, user_text: str | None, response: str, token: int) -> None:
+        if not response or not self._is_current(token):
+            return
+        if user_text is not None:
+            self._conversation.append({"role": "user", "content": user_text})
+        self._conversation.append({"role": "assistant", "content": response})
+        self._conversation[:] = self._conversation[-8:]
 
     def _result(
         self,

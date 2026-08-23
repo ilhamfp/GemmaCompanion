@@ -14,10 +14,9 @@ from pathlib import Path
 from .stt import TranscriptionError, transcribe as transcribe_cli
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:8178/inference"
-COMPANION_SPEECH_PROMPT = (
-    "Look left. Look right. Look up. Look down. Look center. What do you see? "
-    "Find my AirPods. AirPods charging case. Find my smartphone. Find my iPhone. "
-    "Is this a scam? What does this say? Volume up. Volume down."
+COMPANION_SPEECH_CONTEXT = (
+    "Gemma Companion. OBSBOT camera. Audio-Technica speaker. Apple AirPods charging case. "
+    "smartphone. iPhone. glasses. visual scene. speaker loudness."
 )
 
 
@@ -34,7 +33,7 @@ def _multipart(audio_path: Path) -> tuple[bytes, str]:
     field("response_format", "json")
     field("language", "en")
     field("temperature", "0")
-    field("prompt", COMPANION_SPEECH_PROMPT)
+    field("prompt", COMPANION_SPEECH_CONTEXT)
     body.extend(f"--{boundary}\r\n".encode())
     body.extend(
         (

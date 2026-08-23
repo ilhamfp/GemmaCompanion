@@ -8,6 +8,7 @@ export GEMMA_CAMERA_DEVICE="${GEMMA_CAMERA_DEVICE:-/dev/video0}"
 export GEMMA_AUDIO_CAPTURE_DEVICE="${GEMMA_AUDIO_CAPTURE_DEVICE:-plughw:CARD=Device,DEV=0}"
 export GEMMA_AUDIO_PLAYBACK_DEVICE="${GEMMA_AUDIO_PLAYBACK_DEVICE:-plughw:CARD=Device,DEV=0}"
 export GEMMA_PLAYBACK_VOLUME="${GEMMA_PLAYBACK_VOLUME:-100}"
+export GEMMA_SPEECH_MODE="${GEMMA_SPEECH_MODE:-whisper}"
 export PYTHONUNBUFFERED=1
 
 # The TTS venv intentionally reuses Ubuntu's already-verified Pillow package.
@@ -38,7 +39,9 @@ fi
 python3 "$repo_root/scripts/set_volume.py" "$GEMMA_PLAYBACK_VOLUME"
 
 "$repo_root/scripts/ensure_gemma.sh"
-"$repo_root/scripts/ensure_whisper.sh"
+if [[ "$GEMMA_SPEECH_MODE" == "whisper" ]]; then
+  "$repo_root/scripts/ensure_whisper.sh"
+fi
 
 python_bin=python3
 if [[ -x "$repo_root/.venv/bin/python" ]]; then

@@ -60,7 +60,8 @@ exec "$server" \
   --host 127.0.0.1 \
   --port "${GEMMA_PORT:-11434}" \
   --no-webui \
-  --ctx-size 2048 \
+  --ctx-size "${GEMMA_CONTEXT_SIZE:-4096}" \
+  --parallel "${GEMMA_PARALLEL:-2}" \
   --n-gpu-layers 999 \
   --device CUDA0 \
   --no-warmup \
@@ -69,6 +70,7 @@ exec "$server" \
   --ubatch-size 128 \
   --flash-attn on \
   --jinja \
+  --skip-chat-parsing \
   --reasoning off \
   --reasoning-budget 0 \
   --cache-ram 0

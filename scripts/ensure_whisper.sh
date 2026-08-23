@@ -8,7 +8,7 @@ quant_model="$repo_root/models/ggml-tiny.en-q5_1.bin"
 port="${GEMMA_WHISPER_PORT:-8178}"
 health="http://127.0.0.1:$port/health"
 pid_file="$repo_root/.runtime/whisper-server.pid"
-prompt="Look left. Look right. Look up. Look down. Look center. What do you see? Find my AirPods. AirPods charging case. Find my smartphone. Find my iPhone. Is this a scam? What does this say? Volume up. Volume down."
+prompt="Gemma Companion. OBSBOT camera. Audio-Technica speaker. Apple AirPods charging case. smartphone. iPhone. glasses. visual scene. speaker loudness."
 
 server_healthy() {
   python3 - "$health" <<'PY'

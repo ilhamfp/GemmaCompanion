@@ -12,8 +12,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.gemma import GemmaClient  # noqa: E402
-from demos.companion import CONVERSATION_PROMPT, CompanionSession  # noqa: E402
-from tools.registry import FIND_OBJECT_SCHEMA, INSPECT_VIEW_SCHEMA, tool_name  # noqa: E402
+from demos.companion import AGENT_DECISION_PROMPT, CompanionSession  # noqa: E402
+from tools.registry import COMPANION_DECISION_SCHEMAS, tool_name  # noqa: E402
 
 VISUAL_PROMPTS = (
     "What color is the object I'm holding?",
@@ -25,10 +25,11 @@ VISUAL_PROMPTS = (
 def _selected_tool(client: GemmaClient, prompt: str) -> tuple[str, str]:
     text, calls = client.step(
         [
-            {"role": "system", "content": CONVERSATION_PROMPT},
+            {"role": "system", "content": AGENT_DECISION_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        tools=[FIND_OBJECT_SCHEMA, INSPECT_VIEW_SCHEMA],
+        tools=COMPANION_DECISION_SCHEMAS,
+        tool_choice="required",
     )
     return (tool_name(calls[0]) if calls else "none"), text
 
@@ -39,8 +40,10 @@ def main() -> int:
     model_selections = [_selected_tool(client, prompt)[0] for prompt in VISUAL_PROMPTS]
 
     general_tool, general_text = _selected_tool(client, "Why is the sky blue?")
-    if general_tool != "none" or not general_text:
-        raise AssertionError("ordinary knowledge question did not remain ordinary chat")
+    if general_tool not in {"none", "respond_normally"} or (
+        general_tool == "none" and not general_text
+    ):
+        raise AssertionError("ordinary knowledge question did not select normal response")
     finder_tool, _ = _selected_tool(client, "Find my blue mug.")
     if finder_tool != "find_object":
         raise AssertionError(f"finder control selected {finder_tool!r}")

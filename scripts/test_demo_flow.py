@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from demos.companion import READY_CUE, CompanionSession, parse_intent  # noqa: E402
-from tools.registry import FIND_OBJECT_SCHEMA, tool_name  # noqa: E402
+from demos.companion import READY_CUE, CompanionSession  # noqa: E402
+from tools.registry import COMPANION_DECISION_SCHEMAS, tool_name  # noqa: E402
 
 
 def main() -> int:
@@ -27,10 +27,10 @@ def main() -> int:
         if session.last_result is None or session.last_result.response != READY_CUE:
             raise AssertionError("boot greeting was not grounded and ready")
 
-        left = session.handle_text("look left")
-        left_view = session.handle_text("what do you see?")
-        right = session.handle_text("look right")
-        right_view = session.handle_text("what do you see?")
+        left = session.handle_text("Orient toward the port side.")
+        left_view = session.handle_text("Summarize the scene now facing the lens.")
+        right = session.handle_text("Orient toward the starboard side.")
+        right_view = session.handle_text("Report the current scene from this new angle.")
         if left.action != "look_left" or right.action != "look_right":
             raise AssertionError("directional demo commands did not move physically")
         if not left_view.image_path or not right_view.image_path:
@@ -47,7 +47,8 @@ def main() -> int:
                 },
                 {"role": "user", "content": "Please find my AirPods."},
             ],
-            tools=[FIND_OBJECT_SCHEMA],
+            tools=COMPANION_DECISION_SCHEMAS,
+            tool_choice="required",
         )
         if not calls or tool_name(calls[0]) != "find_object":
             raise AssertionError(f"Gemma did not select find_object: {calls}")
@@ -56,9 +57,11 @@ def main() -> int:
         if "airpod" not in target.casefold():
             raise AssertionError(f"Gemma extracted an unexpected finder target: {target!r}")
 
-        scam_intent = parse_intent("Is this a scam or not?")
-        if scam_intent.kind != "visual_question":
-            raise AssertionError(f"scam question routed as {scam_intent}")
+        scam = session.handle_text(
+            "Assess whether the message I am presenting to the lens is fraudulent."
+        )
+        if scam.action != "visual_question" or not scam.image_path:
+            raise AssertionError(f"scam question did not request fresh vision: {scam}")
     finally:
         session.stop()
 

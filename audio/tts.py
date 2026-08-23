@@ -34,7 +34,7 @@ VOICES_PATH = REPO_ROOT / "models" / "voices-v1.0.bin"
 CACHE_DIR = REPO_ROOT / "artifacts" / "tts-cache"
 
 DEFAULT_VOICE = "af_heart"
-DEFAULT_BASE_SPEED = 1.0
+DEFAULT_BASE_SPEED = 1.08
 DEFAULT_SAMPLE_RATE = 24_000
 
 LOOK_ANNOUNCEMENT = "Let me look over there."

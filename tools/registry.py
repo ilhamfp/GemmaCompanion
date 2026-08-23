@@ -33,14 +33,56 @@ def _schema(name: str, description: str) -> dict:
 
 
 LOOK_SCHEMAS = [
-    _schema("look_left", "Physically turn the camera left to inspect a new area."),
-    _schema("look_right", "Physically turn the camera right to inspect a new area."),
-    _schema("look_up", "Physically tilt the camera upward to inspect a new area."),
-    _schema("look_down", "Physically tilt the camera downward to inspect a new area."),
-    _schema("look_center", "Physically return the camera to its centered home position."),
+    _schema("look_left", "Execute a physical camera turn toward the user's left-hand side."),
+    _schema("look_right", "Execute a physical camera turn toward the user's right-hand side."),
+    _schema("look_up", "Execute a physical camera tilt toward a higher or overhead area."),
+    _schema("look_down", "Execute a physical camera tilt toward a lower or floor area."),
+    _schema("look_center", "Execute a physical return to the neutral forward-facing home position."),
 ]
 
 HORIZONTAL_LOOK_SCHEMAS = LOOK_SCHEMAS[:2]
+
+STOP_SPEAKING_SCHEMA = _schema(
+    "cancel_current_response",
+    "Confirm that the current spoken response or physical task should stop. Voice onset already "
+    "interrupts playback immediately; use this tool when the user's new request is cancellation.",
+)
+
+SLEEP_SCHEMA = _schema(
+    "sleep",
+    "Enter a quiet idle state until the user's next detected utterance resumes interaction.",
+)
+
+MAKE_VOICE_LOUDER_SCHEMA = _schema(
+    "make_voice_louder",
+    "Physically raise the audible USB speaker volume by one safe step.",
+)
+
+MAKE_VOICE_SOFTER_SCHEMA = _schema(
+    "make_voice_softer",
+    "Physically lower the audible USB speaker volume by one safe step.",
+)
+
+SET_VOLUME_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "set_volume",
+        "description": "Set the physical USB speaker playback volume to an exact percentage.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "percent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Requested playback volume from zero through one hundred.",
+                }
+            },
+            "required": ["percent"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 FIND_OBJECT_SCHEMA = {
     "type": "function",
@@ -85,6 +127,32 @@ INSPECT_VIEW_SCHEMA = {
         },
     },
 }
+
+RESPOND_NORMALLY_SCHEMA = _schema(
+    "respond_normally",
+    "Answer from language knowledge and conversation only when no physical action, current camera "
+    "evidence, object search, or device setting is needed.",
+)
+
+FINISH_MOVEMENT_SCHEMA = _schema(
+    "finish_movement",
+    "The completed camera movement fully satisfies the original request; no camera-derived answer remains.",
+)
+
+MOVEMENT_COMPLETION_SCHEMAS = [INSPECT_VIEW_SCHEMA, FINISH_MOVEMENT_SCHEMA]
+
+COMPANION_TOOL_SCHEMAS = [
+    *LOOK_SCHEMAS,
+    INSPECT_VIEW_SCHEMA,
+    FIND_OBJECT_SCHEMA,
+    MAKE_VOICE_LOUDER_SCHEMA,
+    MAKE_VOICE_SOFTER_SCHEMA,
+    SET_VOLUME_SCHEMA,
+    STOP_SPEAKING_SCHEMA,
+    SLEEP_SCHEMA,
+]
+
+COMPANION_DECISION_SCHEMAS = [*COMPANION_TOOL_SCHEMAS, RESPOND_NORMALLY_SCHEMA]
 
 ASK_USER_SCHEMA = {
     "type": "function",
