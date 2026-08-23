@@ -12,7 +12,14 @@ for _ in $(seq 1 240); do
     systemctl --no-pager --full status "$service" >&2 || true
     exit 1
   }
-  latest_log=$(ls -t "$repo_root"/logs/companion-*.jsonl 2>/dev/null | head -1 || true)
+  latest_log=""
+  while IFS= read -r candidate; do
+    if grep -q '"action": "COMPANION_START"' "$candidate" \
+      && grep -q '"microphone": true' "$candidate"; then
+      latest_log="$candidate"
+      break
+    fi
+  done < <(ls -t "$repo_root"/logs/companion-*.jsonl 2>/dev/null || true)
   if [[ -n "$latest_log" ]] \
     && grep -q '"action": "BOOT_OBSERVE"' "$latest_log" \
     && grep -Fq "\"response\": \"Hi, I'm Gemma!\"" "$latest_log" \
