@@ -767,3 +767,85 @@ airpods_tool_regression: PASS; tool=find_object; arguments={'target': 'AirPods w
 ```
 
 One concurrent diagnostic run exposed a transient malformed camera JPEG during boot. Companion-level boot, describe, and visual-question capture now retry up to three times; the final full regression passed after this change. Implementation commit: `f1fd4a9`. No GitHub push was performed per the human's explicit instruction.
+
+## M15 Phrase-free agentic companion
+
+### JETSON — semantic tools, compound action, visual referents, and open chat
+
+The exact user-phrase router and its direction aliases were removed. The companion now sends every transcript to Gemma with the full physical tool registry, current camera state, and `respond_normally`. llama.cpp runs with `--skip-chat-parsing`; the client recovers only registered native, bare-line, or positional function serializations. A separate Gemma completion call distinguishes movement-only requests from movement plus fresh visual evidence, and a Gemma `CAMERA`/`KNOWLEDGE` evidence gate protects present physical referents without a Python phrase list.
+
+Commands:
+
+```sh
+cd ~/gemma-companion
+.venv/bin/python scripts/test_agentic_audio.py
+.venv/bin/python scripts/test_visual_routing.py
+.venv/bin/python scripts/test_demo_flow.py
+.venv/bin/python scripts/test_open_chat.py
+```
+
+All commands exited 0. Representative exact output:
+
+```text
+text_tool: PASS; prompt=Aim your gaze toward the port side.; tools=look_left; latency_seconds=1.345
+text_tool: PASS; prompt=Please decipher the writing on the card I am presenting to the lens.; tools=inspect_view; latency_seconds=0.438
+text_tool: PASS; prompt=Track down the spectacles I misplaced.; tools=find_object; latency_seconds=0.698
+ordinary_gate: PASS; tools=direct_text; latency_seconds=0.971
+You: Turn toward the port side and report the scene from there.
+Gemma: Turning to the port side shows a desk with various items like a monitor and some boxes. There is a pink object and some papers on the desk.
+dependent_tools: PASS; action=look_left_and_inspect; frame=/home/iputra/gemma-companion/captures/companion/capture-77f08ff2b20e4875a304052ba3931d30.jpg; latency_seconds=4.289
+available_memory_mib: 2498.4; limit: >500
+result: PASS Gemma semantically selects and chains embodied tools
+```
+
+The visual verifier captured three unique frames for current color, object identity, and label-writing requests while keeping general knowledge in chat and a misplaced object in `find_object`. The boot/demo verifier physically moved left and right, described each fresh view, selected the AirPods finder, and routed a shown-message fraud assessment through live vision. The open-chat verifier then answered unfamiliar physics, biology, memory, arithmetic, and humor prompts without a camera frame. Implementation commit: `a37eddf`.
+
+## M16 Native Gemma audio experiment
+
+### JETSON — direct WAV to Gemma function call
+
+The production two-slot server was replaced temporarily by a fresh one-slot server. Gemma received the real recorded `Find my glasses` WAV as `input_audio`, with no Whisper request.
+
+Command:
+
+```sh
+GEMMA_PARALLEL=1 ./scripts/ensure_gemma.sh
+.venv/bin/python scripts/experiment_direct_audio.py captures/audio/speech-f530f9bea06f405f9c76971087dfad6a.wav --expect-tool find_object
+```
+
+Exit code: 0.
+
+```text
+isolated_slots: PASS; count=1
+direct_audio_tool: PASS; tool=find_object; latency_seconds=2.524; available_memory_mib=2887.7
+result: PASS native Gemma audio selected a tool without Whisper
+IMPORTANT: restart the normal two-slot llama.cpp server before any vision request
+```
+
+Earlier mixed-modality stress runs established the production boundary: native audio plus later GPU vision exhausts CUDA memory on this 8 GB device, while a CPU projector avoids the immediate crash but makes vision exceed 30 seconds. Whisper therefore remains the reliable boot default. The normal `GEMMA_PARALLEL=2` server was restored and `scripts/test_gemma.py` immediately passed text in 0.301 seconds, vision in 1.861 seconds, and a parsed tool in 0.436 seconds with 2.6 GiB available.
+
+## M17 Continuous-path latency and resilience
+
+### JETSON — final physical, speech, TTS, cancellation, and resource gates
+
+Commands:
+
+```sh
+cd ~/gemma-companion
+.venv/bin/python scripts/test_companion.py
+.venv/bin/python scripts/test_fast_stt.py captures/audio/speech-f530f9bea06f405f9c76971087dfad6a.wav --expect 'find my glasses'
+.venv/bin/python scripts/test_tts.py
+.venv/bin/python scripts/test_playback_interrupt.py
+```
+
+All final commands exited 0. Physical companion output:
+
+```text
+agentic_moves: PASS; paraphrase_sequence=look_left,look_right,look_center; max_latency_seconds=2.139
+fresh_vision: PASS; direction=center; latency_seconds=4.871; response=The scene shows a desk with a computer monitor, a cardboard box, and several items like a phone and some bottles. There is also a tube of cream and some other miscellaneous objects on the surface.
+fresh_frame: /home/iputra/gemma-companion/captures/companion/capture-f5b7548046a44302b4c64be7fc9c6060.jpg
+available_memory_mib: 2505.7
+result: PASS phrase-free agent routing, physical PTZ, and fresh vision
+```
+
+Neutral-context Whisper repeatedly returned `Find my glasses.` in 1.454--1.470 seconds. Kokoro speed 1.08 passed with 1.311-second first audio, 2.979-second warm synthesis, 0.005-second cached playback start, 414.9 MiB resident RSS, and 2.114 GiB free despite the verifier temporarily loading a second TTS instance beside the active service. ALSA playback stopped in 0.0155 seconds against a 0.3000-second limit. Relative to the accepted pre-optimization companion run, the maximum model-selected movement fell from 2.976 to 2.139 seconds and fresh vision from 6.001 to 4.871 seconds. Disk remained 417 GiB free. No GitHub push was performed per the human's instruction.

@@ -38,7 +38,7 @@ microphone muted -> unmute -> speak -> mute -> Gemma acts/answers
 
 Examples:
 
-- `Look left.` — direct bounded movement; no Gemma reasoning delay.
+- `Look left.` — Gemma selects a bounded physical movement tool from the request's meaning.
 - `Look right.`
 - `Look up.`
 - `Look down.`
@@ -50,12 +50,14 @@ Examples:
 - `Stop.` or `Be quiet.` — cancels current playback.
 - `Volume up.` or `Volume down.` — adjusts the AT-CSP1 by ten percentage points.
 - `Set volume to 90 percent.` — selects an exact hardware playback level.
-- `Go to sleep.` — remains locally available but ignores other requests.
-- `Wake up.` — resumes normal requests.
+- `Go to sleep.` — enters a quiet idle state.
+- `Wake up.` — explicitly resumes it; the next detected utterance also wakes the tactile session.
+
+These sentences are examples, not a command grammar. The companion has no exact-phrase router: natural paraphrases and unfamiliar wording go through the same Gemma function gate, while requests requiring no hardware or live evidence receive ordinary Gemma answers.
 
 To interrupt, do not wait for Gemma to finish. Unmute while it is speaking, say the new request, and mute again. Human voice onset terminates active playback; the newest request invalidates any older unfinished model response.
 
-Playback defaults to 100% at each companion start. The voice commands above remain available throughout the session. From a Jetson terminal, `make volume VOLUME=90` provides the same adjustment; `GEMMA_PLAYBACK_VOLUME` changes the service default.
+Playback defaults to 100% at each companion start. Volume requests remain available throughout the session and are semantically selected by Gemma. From a Jetson terminal, `make volume VOLUME=90` provides the same adjustment; `GEMMA_PLAYBACK_VOLUME` changes the service default.
 
 ## Recommended live-demo sequence
 

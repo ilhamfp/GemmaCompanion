@@ -20,31 +20,36 @@ Measured on the Jetson Orin Nano Super:
 
 | Operation | Runtime / license | Accepted latency |
 |---|---|---:|
-| Text → text | Gemma 4 E2B Q4_0 / Gemma terms | 0.306 s |
-| 1024 px live image → text | Gemma 4 E2B Q4_0 / Gemma terms | 2.099 s |
-| Parseable tool call | Gemma 4 E2B Q4_0 / Gemma terms | 0.550 s |
-| Natural TTS, warm first audio | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 1.320 s |
-| Natural TTS, cached clip start | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 0.001 s |
+| Text → text | Gemma 4 E2B Q4_0 / Gemma terms | 0.301 s |
+| 1024 px live image → text | Gemma 4 E2B Q4_0 / Gemma terms | 1.861 s |
+| Parseable tool call | Gemma 4 E2B Q4_0 / Gemma terms | 0.436 s |
+| Neutral Whisper transcription | whisper.cpp tiny.en Q5_1 / MIT runtime | 1.454–1.470 s |
+| Agentic transcript → physical PTZ | Gemma tool gate + UVC | ≤2.139 s |
+| Agentic fresh visual answer | Gemma tool gate + capture + vision | 4.871 s |
+| Natural TTS, warm first audio | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 1.311 s |
+| Natural TTS, cached clip start | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 0.005 s |
 | Full Akinator games | End-to-end application / MIT | 21.506–40.590 s |
 | Full requested-object finder runs | End-to-end application / MIT | 24.835–25.627 s |
 
-After multimodal inference, `free -h` showed 3.3 GiB available. With Gemma and the resident CPU-only Kokoro model loaded, 3.068 GiB remained available and the TTS process used 419.5 MiB RSS. The loop aborts below 500 MiB.
+The final physical companion regression retained 2.5 GiB available. A separate TTS verifier, which temporarily loaded a second Kokoro instance alongside the boot service, retained 2.114 GiB and measured 414.9 MiB TTS RSS. The loop aborts below 500 MiB.
 
 ## Architecture
 
 ```text
 AT-CSP1 microphone
-        │ 16 kHz WAV
+        │ continuous 16 kHz PCM; temporary utterance WAV
         ▼
-whisper.cpp tiny.en ──► short textual memory ──► Gemma 4 E2B Q4_0
-                                                    │
-                           ┌────────────────────────┼───────────────────────┐
-                           │ ASK / ANSWER           │ LOOK tool             │
-                           ▼                        ▼                       │
-                Kokoro-82M natural TTS       bounded UVC pan/tilt          │
-                           │                        │                       │
-                           ▼                        ▼                       │
-                   AT-CSP1 speaker           fresh OBSBOT JPEG ────────────┘
+whisper.cpp tiny.en ──► Gemma semantic function gate ──► ordinary answer
+                                  │
+                ┌─────────────────┼────────────────────┐
+                │ LOOK tools      │ inspect_view       │ find_object / volume / stop
+                ▼                 ▼                    ▼
+        bounded UVC pan/tilt  fresh OBSBOT JPEG   deterministic local action
+                │                 │
+                └─────────────────┴──────► Gemma 4 E2B Q4_0
+                                                  │
+                                                  ▼
+                                      Kokoro-82M → AT-CSP1 speaker
 
 Every action and latency ──► logs/session-*.jsonl
 ```
@@ -75,7 +80,7 @@ make runtime
 
 The runtime bootstrap downloads pinned, checksum-verified official Ollama ARM64 and JetPack 6 archives, pulls `gemma4:e2b-it-qat`, downloads the official whisper.cpp b4938 ARM64 runtime and `tiny.en` model, and unpacks Ubuntu's eSpeak NG package without sudo. The TTS bootstrap creates the gitignored `.venv`, installs the pinned CPU-only Kokoro ONNX stack, and downloads checksum-verified `kokoro-v1.0.onnx` and `voices-v1.0.bin` into `models/`. It needs internet only once. The downloaded `.runtime/`, `.venv/`, and `models/` trees are ignored by git. If Jetson DNS is unavailable, run the downloads on another machine and copy the resulting runtime/model assets to the same repo paths.
 
-The base image must already provide GStreamer, ALSA `arecord`/`aplay`, Python, the JetPack CUDA userspace, and eSpeak's shared-library dependencies. Kokoro stays resident on CPU and uses the selected `af_heart` voice at speed 1.0; eSpeak NG remains installed for phonemization and emergency runtime fallback. Run `./scripts/recon.sh` to verify the expected devices before a demo. Environment overrides are available for `GEMMA_CAMERA_DEVICE`, `GEMMA_AUDIO_CAPTURE_DEVICE`, and `GEMMA_AUDIO_PLAYBACK_DEVICE`.
+The base image must already provide GStreamer, ALSA `arecord`/`aplay`, Python, the JetPack CUDA userspace, and eSpeak's shared-library dependencies. Kokoro stays resident on CPU and uses the selected `af_heart` voice at speed 1.08; eSpeak NG remains installed for phonemization and emergency runtime fallback. Run `./scripts/recon.sh` to verify the expected devices before a demo. Environment overrides are available for `GEMMA_CAMERA_DEVICE`, `GEMMA_AUDIO_CAPTURE_DEVICE`, and `GEMMA_AUDIO_PLAYBACK_DEVICE`.
 
 ## Run the demos
 
@@ -85,11 +90,13 @@ For the continuous, tactile companion session, keep the AT-CSP1 microphone muted
 make companion
 ```
 
-Once Gemma says `Hi, I'm Gemma!`, unmute, speak, and mute again. That exact greeting is emitted only after the camera has centered, a fresh frame has been inspected, and continuous capture is live. Voice onset interrupts any current reply; commands such as `look left`, `what do you see?`, `find my AirPods`, and `is this a scam or not?` remain available throughout one persistent session. See [`docs/LIVE_COMPANION.md`](docs/LIVE_COMPANION.md) for the one-time boot-service installation and [`docs/DEMO_FLOW.md`](docs/DEMO_FLOW.md) for the exact five-beat no-Mac presentation.
+Once Gemma says `Hi, I'm Gemma!`, unmute, speak, and mute again. That exact greeting is emitted only after the camera has centered, a fresh frame has been inspected, and continuous capture is live. Voice onset interrupts any current reply. There is no user-phrase router: each transcript reaches Gemma's semantic function gate, which may move or inspect the camera, search for an object, change speaker volume, stop, sleep, or answer normally. Paraphrases such as `aim toward port`, `decipher the card I'm presenting`, and `raise your speaking loudness` are verified. See [`docs/LIVE_COMPANION.md`](docs/LIVE_COMPANION.md) for the one-time boot-service installation and [`docs/DEMO_FLOW.md`](docs/DEMO_FLOW.md) for the exact five-beat no-Mac presentation.
 
 The microphone PCM stream remains open so physical unmute can be detected immediately, but raw audio is not retained. Only a detected utterance becomes a temporary WAV for local Whisper, and that file is deleted after transcription.
 
-The AT-CSP1 starts at 100% playback volume. While the companion is running, say `volume up`, `volume down`, or `set volume to 90 percent`; these commands change the USB hardware mixer immediately without Gemma inference. From a terminal, use `make volume VOLUME=90`. Set `GEMMA_PLAYBACK_VOLUME` to change the boot default.
+Gemma 4's native audio path was also tested directly: a real `Find my glasses` WAV selected `find_object` without Whisper in 2.524 seconds with 2.888 GiB free. It is not the stage default because this 8 GB runtime cannot reliably keep native-audio and GPU-vision projector state in one long-lived process; mixed turns can exhaust CUDA memory. [`scripts/experiment_direct_audio.py`](scripts/experiment_direct_audio.py) therefore requires an isolated one-slot server, while the reliable boot service uses neutral-prompt Whisper and a two-slot vision server.
+
+The AT-CSP1 starts at 100% playback volume. While the companion is running, requests such as `volume up`, `make your voice softer`, or `set volume to 90 percent` let Gemma select the appropriate mixer tool; execution changes the USB hardware mixer immediately. From a terminal, use `make volume VOLUME=90`. Set `GEMMA_PLAYBACK_VOLUME` to change the boot default.
 
 The bounded Akinator and object-finder demos remain available below.
 

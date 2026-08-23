@@ -13,7 +13,7 @@ No wake word, Mac, network connection, keyboard, or dashboard is required during
 3. A short in-memory pre-roll preserves the beginning of the command.
 4. Returning to the muted noise floor closes the utterance quickly.
 5. Only the completed utterance is written to a temporary WAV for offline Whisper transcription; it is deleted immediately afterward.
-6. Physical commands bypass Gemma and dispatch directly to bounded UVC controls.
+6. Every completed transcript reaches Gemma's semantic function gate; no exact user phrase or direction-alias router runs first.
 7. A visual question always captures a fresh still at the current physical direction before Gemma answers.
 8. A newer utterance invalidates any older inference or synthesized response. Stale output is discarded.
 
@@ -29,30 +29,33 @@ BOOTING
 READY/LISTENING
   -> voice onset: BARGE_IN (cancel speech, invalidate prior turn)
   -> mute/silence: TRANSCRIBE
-  -> direct movement: ACT -> READY/LISTENING
-  -> visual question: CAPTURE -> GEMMA_VISION -> SPEAKING
-  -> other request: GEMMA_TEXT -> SPEAKING
+  -> GEMMA_TOOL_GATE
+     -> movement tool: ACT -> semantic completion check -> READY/LISTENING
+     -> inspect_view: CAPTURE -> GEMMA_VISION -> SPEAKING
+     -> find/volume/stop/sleep tool: deterministic local action
+     -> respond_normally: GEMMA_TEXT -> SPEAKING
 
 SPEAKING
   -> voice onset: cancel playback -> BARGE_IN
   -> playback complete: READY/LISTENING
 
 SLEEPING
-  -> only "wake up" is acted on
-  -> capture stays local and no model request runs
+  -> next detected utterance resumes interaction
 ```
 
-## Deterministic command priority
+## Agentic tool selection
 
-The latest utterance wins. Commands are matched in this order:
+The latest utterance wins, but it is not compared with a list of phrases. Gemma receives the newest transcript, current camera direction, and these registered capabilities:
 
-1. `stop`, `cancel`, `be quiet`
-2. `go to sleep`, `wake up`
-3. `look left`, `look right`, `look up`, `look down`, `look center`
-4. `what do you see`, `describe what you see`, `what is in front of you`
-5. all other text goes to the local Gemma conversation path
+- `look_left`, `look_right`, `look_up`, `look_down`, `look_center`
+- `inspect_view`, `find_object`
+- `make_voice_louder`, `make_voice_softer`, `set_volume`
+- `cancel_current_response`, `sleep`
+- `respond_normally`
 
-Movement commands never wait for Gemma. Camera access is serialized, and every movement is clamped by the existing OBSBOT safety bounds.
+Gemma selects from meaning and may emit more than one function for a compound request. A movement-only request ends after bounded UVC motion; movement plus a visual question receives a second tiny Gemma completion check and then captures exactly one fresh frame. If the 2B model narrates an action instead of serializing it, a fresh-context repair turn converts that intent into a registered function. If it incorrectly chooses ordinary chat for a present physical referent, a separate Gemma evidence classifier chooses `CAMERA` or `KNOWLEDGE`; this is semantic model inference, not phrase matching.
+
+llama.cpp runs with `--skip-chat-parsing`, so its strict PEG parser cannot turn a valid tool call plus harmless trailing prose into HTTP 500. `GemmaClient` accepts only names from the supplied registry and recovers native Gemma, bare-line, and positional serialization; arbitrary text never becomes an executable action.
 
 ## Audio thresholds
 
@@ -72,16 +75,23 @@ All thresholds are environment-overridable and must be tuned only through the ph
 
 - voice onset to current playback cancellation: under 300 ms
 - mute/end-of-speech to completed segment: under 600 ms
-- completed `look_*` utterance to gimbal command: under 1.5 seconds, including Whisper
-- fresh-image Gemma response: under 5 seconds after transcription
+- real utterance Whisper transcription: under 1.5 seconds (observed 1.454--1.470 seconds)
+- completed transcript to bounded gimbal result: under 3 seconds (observed maximum 2.139 seconds)
+- fresh-image answer after transcript: under 8 seconds (observed 4.871 seconds)
 - stale response after a newer utterance: never spoken
 - available RAM with Gemma, Whisper, and TTS loaded: above 500 MiB
 
 ## Boot behavior
 
-`scripts/run_companion.sh` is the service entry point. It waits for `/dev/video0` and the stable ALSA card alias `Device`, starts the local Gemma server if necessary, then runs the companion with the repository virtual environment when available. The service restarts on failure and writes logs to the system journal plus the application JSONL session log.
+`scripts/run_companion.sh` is the service entry point. It waits for `/dev/video0` and the stable ALSA card alias `Device`, starts the local Gemma and Whisper servers if necessary, then runs the companion with the repository virtual environment when available. Gemma uses two parallel slots in a 4096-token shared context, allowing a newer turn to begin while an older turn is being invalidated. The companion checks model health every five seconds; systemd restarts it after a process failure. Logs go to the system journal plus the application JSONL session log.
 
 True headless power-on startup uses `deploy/gemma-companion.service`. Installing or enabling it changes system configuration and therefore remains a one-time human-authorized sudo step. A reboot is a separate final acceptance gate.
+
+## Native-audio experiment
+
+The loaded Gemma 4 projector advertises audio input, and a real `Find my glasses` WAV selected `find_object` directly in 2.524 seconds without Whisper. The experiment had 2.888 GiB available and is reproducible with `scripts/experiment_direct_audio.py` on a freshly started `GEMMA_PARALLEL=1` server.
+
+This is not the boot default. On the 8 GB Jetson, mixing native audio and later GPU vision in the same resident process can exhaust CUDA memory; using a CPU projector avoided that crash but made vision exceed the latency target. The reliable stage configuration therefore keeps Whisper for speech and GPU Gemma for reasoning/vision. `GEMMA_SPEECH_MODE=direct` remains an explicit experimental code path, not a production recommendation.
 
 ## Verification order
 

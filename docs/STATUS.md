@@ -197,3 +197,44 @@ evidence: |
 fallback_taken: none
 commit: f1fd4a9
 notes: The new inspect_view tool lets Gemma request a fresh camera frame for visible references, while a semantic deictic fallback guarantees current-object, holding, color, identity, label, and screen questions do not become camera-less chat when the small model omits the tool call. `What color is the object I'm holding?` also passed with action=visual_question in 2.557 seconds on its own unique frame. General knowledge remained chat, `Find my blue mug` and `Find my AirPods` remained find_object, and the full boot cue, physical PTZ, and fresh-vision regression passed. Companion camera capture now retries three transient malformed frames. Per the human's instruction, no GitHub push was performed; this change was synced only to the Jetson and requires a human-authorized service restart to load.
+
+## M15 Phrase-free agentic companion
+status: DONE
+verified_by: scripts/test_agentic_audio.py + scripts/test_visual_routing.py + scripts/test_demo_flow.py + scripts/test_open_chat.py
+verified_at: 2026-08-24 02:22 SGT
+evidence: |
+  You: Turn toward the port side and report the scene from there.
+  Gemma: Turning to the port side shows a desk with various items like a monitor and some boxes. There is a pink object and some papers on the desk.
+  dependent_tools: PASS; action=look_left_and_inspect; frame=/home/iputra/gemma-companion/captures/companion/capture-77f08ff2b20e4875a304052ba3931d30.jpg; latency_seconds=4.289
+  available_memory_mib: 2498.4; limit: >500
+  result: PASS Gemma semantically selects and chains embodied tools
+fallback_taken: none
+commit: a37eddf
+notes: `parse_intent`, exact visual-phrase lists, direction aliases, and the deictic code router were removed. Every transcript now reaches Gemma's 12-capability function gate; a small model-driven completion check composes movement with fresh vision, a model-driven evidence classifier protects current physical referents, and a bounded repair turn recovers narrated tool intent. The strict llama.cpp PEG parser is bypassed, while only supplied function names and validated arguments can execute. Thirteen unfamiliar action paraphrases, three unique fresh-reference frames, the five-beat physical flow, and five unrelated open-chat questions all passed. No GitHub push was performed per the human's instruction.
+
+## M16 Native Gemma audio experiment
+status: DONE
+verified_by: scripts/experiment_direct_audio.py
+verified_at: 2026-08-24 02:16 SGT
+evidence: |
+  isolated_slots: PASS; count=1
+  direct_audio_tool: PASS; tool=find_object; latency_seconds=2.524; available_memory_mib=2887.7
+  result: PASS native Gemma audio selected a tool without Whisper
+  IMPORTANT: restart the normal two-slot llama.cpp server before any vision request
+fallback_taken: Whisper remains the stage default because native audio followed by GPU vision exhausts CUDA memory on the 8 GB Jetson; the CPU-projector alternative missed the vision latency target.
+commit: a37eddf
+notes: Gemma directly consumed the real `Find my glasses` WAV and selected `find_object` without transcription. The experiment is preserved behind an explicit direct-audio code path and a one-slot verifier, but it is not presented as production-ready. The normal two-slot GPU-vision server was restored afterward and `scripts/test_gemma.py` passed text, image, and tool calls with 2.6 GiB available. No GitHub push was performed.
+
+## M17 Continuous-path latency and resilience
+status: DONE
+verified_by: scripts/test_companion.py + scripts/test_fast_stt.py + scripts/test_tts.py + scripts/test_playback_interrupt.py
+verified_at: 2026-08-24 02:22 SGT
+evidence: |
+  agentic_moves: PASS; paraphrase_sequence=look_left,look_right,look_center; max_latency_seconds=2.139
+  fresh_vision: PASS; direction=center; latency_seconds=4.871; response=The scene shows a desk with a computer monitor, a cardboard box, and several items like a phone and some bottles. There is also a tube of cream and some other miscellaneous objects on the surface.
+  fresh_frame: /home/iputra/gemma-companion/captures/companion/capture-f5b7548046a44302b4c64be7fc9c6060.jpg
+  available_memory_mib: 2505.7
+  result: PASS phrase-free agent routing, physical PTZ, and fresh vision
+fallback_taken: none
+commit: a37eddf
+notes: Tool routing now keeps prior spoken confirmations out of the physical decision prompt, restoring llama.cpp prefix-cache reuse and preventing style imitation. Relative to the pre-optimization accepted run, maximum text-to-PTZ latency fell from 2.976 to 2.139 seconds and fresh vision from 6.001 to 4.871 seconds. Neutral-prompt Whisper transcribed `Find my glasses` in 1.454--1.470 seconds; Kokoro at speed 1.08 passed with 1.311-second first audio, 2.979-second warm synthesis, 0.005-second cached start, and 2.114 GiB free even with a duplicate verifier instance; active ALSA playback cancelled in 0.0155 seconds. The installed boot service still needs the required human-authorized restart to load commit a37eddf.
