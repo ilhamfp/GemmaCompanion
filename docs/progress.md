@@ -849,3 +849,15 @@ result: PASS phrase-free agent routing, physical PTZ, and fresh vision
 ```
 
 Neutral-context Whisper repeatedly returned `Find my glasses.` in 1.454--1.470 seconds. Kokoro speed 1.08 passed with 1.311-second first audio, 2.979-second warm synthesis, 0.005-second cached playback start, 414.9 MiB resident RSS, and 2.114 GiB free despite the verifier temporarily loading a second TTS instance beside the active service. ALSA playback stopped in 0.0155 seconds against a 0.3000-second limit. Relative to the accepted pre-optimization companion run, the maximum model-selected movement fell from 2.976 to 2.139 seconds and fresh vision from 6.001 to 4.871 seconds. Disk remained 417 GiB free. No GitHub push was performed per the human's instruction.
+
+After foreground verifiers created newer JSONL files, `scripts/test_boot_service.sh` was hardened to select the newest log with `COMPANION_START` and `microphone=true` rather than blindly waiting on the newest foreground-test log. Its final exact output was:
+
+```text
+service_enabled: PASS; unit=gemma-companion.service
+service_active: PASS; main_pid=8166
+local_models: PASS; gemma_http=200; whisper_http=200
+continuous_session: PASS; grounded_readiness=yes; log=/home/iputra/gemma-companion/logs/companion-20260824-005936-408114.jsonl
+result: PASS boot service owns a ready offline companion session
+```
+
+Verifier fix commit: `91ba508`.
