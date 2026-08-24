@@ -10,6 +10,46 @@
 
 Gemma Companion is built for **Best Use of Gemma** (primary) and **Best Elderly Hack** (secondary).
 
+## What happens when someone talks to Gemma
+
+After power-on, the Jetson starts `gemma-companion.service` automatically. The service waits for the
+camera and audio device, loads the local models, centers the OBSBOT, inspects one fresh frame, and
+then says **“Hi, I'm Gemma!”**. That greeting is the ready signal. There is no wake word and no Mac,
+terminal, Wi-Fi, or cloud connection is needed during normal use.
+
+The physical interaction is:
+
+```text
+unmute → speak → mute → transcribe → decide → move or see → answer → speak
+```
+
+1. **You unmute and speak.** The Audio-Technica microphone supplies a continuous 16 kHz audio
+   stream. Its physical mute button keeps Gemma's own speaker output from becoming a new request.
+2. **Your voice can interrupt Gemma.** A new voice onset immediately stops the reply currently
+   playing, so a command such as “look left” can redirect the companion without waiting.
+3. **Muting closes your turn.** The muted signal produces the short silence boundary used by the
+   utterance detector. Only that bounded utterance becomes a temporary WAV file.
+4. **Whisper transcribes locally.** `whisper.cpp` converts the WAV into text on the Jetson, after
+   which the temporary audio file is deleted.
+5. **Gemma decides what the request requires.** Gemma's semantic function gate either answers from
+   knowledge or selects a real tool: look left or right, inspect the current view, find an object,
+   change the volume, stop speaking, or sleep. This is model-selected behavior, not a hard-coded
+   phrase router.
+6. **The companion acts and looks when needed.** A look tool physically pans or tilts the OBSBOT.
+   A vision tool waits for the camera to settle, captures a fresh still, and gives that image to
+   Gemma. The object finder repeats this loop across a bounded directional sweep and remembers what
+   was visible in each direction.
+7. **Gemma forms a grounded response.** The answer incorporates the successful physical action or
+   the latest camera pixels—for example, describing an object, reading a label, assessing a shown
+   message, or explaining where a missing item was found.
+8. **Kokoro speaks through the Audio-Technica speaker.** Speech is synthesized locally in short
+   streaming chunks, which makes the first words play while later chunks are still being generated.
+   The loop then remains ready for the next physical unmute.
+
+Every transcription, model decision, tool result, camera observation, response, and latency is
+written to a local JSONL session log. Raw microphone audio is not retained, and the model receives
+requested still images rather than a continuous video stream.
+
 ## Why Gemma is essential
 
 Gemma is not a replaceable chat layer. A local **Gemma 4 E2B instruction-tuned QAT Q4_0** model sees individual OBSBOT frames, reasons over directional memory, and emits structured `look_*` tool calls. Those calls move the physical camera through bounded UVC controls; only then is a fresh JPEG captured and returned to Gemma. This closes the perception-action loop that defines the product.
@@ -65,14 +105,22 @@ Every action and latency ──► logs/session-*.jsonl
 
 Video is never streamed into the model. A session starts with bounded observations, keeps a compact directional inventory, allows at most 8 tool calls and 12 questions, and captures another still only when needed.
 
-## Supported hardware
+## Hardware and what each part does
 
-The released configuration is intentionally hardware-specific:
+The released configuration is intentionally hardware-specific. Three visible devices make up the
+companion; an internal NVMe drive keeps all of its software and data local.
 
-- NVIDIA Jetson Orin Nano Super 8 GB, aarch64, JetPack 6 / Ubuntu 24.04
-- OBSBOT Tiny SE camera/gimbal with UVC absolute pan and tilt
-- Audio-Technica AT-CSP1 USB microphone/speaker
-- An NVMe system disk with room for several gigabytes of local runtime and model assets
+| Hardware | Role | What it does |
+|---|---|---|
+| **NVIDIA Jetson Orin Nano 8 GB** (JetPack 6, Super power mode) | The brain | Runs the boot service and the entire pipeline: CUDA-accelerated Gemma 4 reasoning and vision, CPU-based Whisper speech recognition, CPU-based Kokoro speech synthesis, camera control, memory, and local logs. It is the only computer needed once setup is complete. |
+| **OBSBOT Tiny SE** | The eyes and neck | Supplies fresh 1280×720 MJPEG stills and physically pans or tilts through UVC controls. Gemma can look left, right, up, or down and perform a bounded room sweep; video is never continuously sent to the model. |
+| **Audio-Technica AT-CSP1** | The ears, voice, and turn-taking control | Combines a USB microphone, USB speaker, hardware volume, and physical mute button. It captures speech for Whisper, plays Kokoro's voice, and lets the presenter create a clean turn boundary by unmuting to talk and muting when finished. |
+| **500 GB Transcend NVMe** | Local storage | Holds Ubuntu, the application, model weights, runtime binaries, captures, and evidence logs. Model data and private session artifacts stay on the Jetson instead of being uploaded to a cloud service. |
+
+```text
+OBSBOT Tiny SE ── camera frames + pan/tilt ──► NVIDIA Jetson Orin Nano 8 GB
+Audio-Technica AT-CSP1 ◄── microphone + spoken audio ──► Jetson
+```
 
 The accepted machine used L4T R39.2.1, Python 3.12, a 500 GB Transcend NVMe, OBSBOT capture on `/dev/video0`, and the AT-CSP1 ALSA alias `Device`. Other Linux computers, JetPack releases, cameras, and audio devices are not yet verified. See [`docs/recon.md`](docs/recon.md) for the exact accepted inventory and [`docs/memory-budget.md`](docs/memory-budget.md) for measured memory.
 
