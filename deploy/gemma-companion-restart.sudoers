@@ -1,0 +1,1 @@
+GEMMA_RESTART_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart gemma-companion.service

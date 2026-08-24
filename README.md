@@ -233,6 +233,21 @@ GEMMA_PLAYBACK_VOLUME=90
 sudo systemctl restart gemma-companion.service
 ```
 
+From the development Mac, restart the installed Jetson service without a password prompt:
+
+```bash
+make restart
+```
+
+The boot-service installer grants the service account passwordless access only to the exact
+`systemctl restart gemma-companion.service` operation. SSH must already use key authentication.
+Override the default Jetson address when needed with
+`GEMMA_REMOTE_HOST=user@host make restart`.
+
+`make restart` waits for a new process, a new companion log, both local model endpoints, and
+Gemma's grounded startup greeting. A successful command therefore means the newly restarted
+session is ready, rather than merely that systemd started a process.
+
 Do not set `GEMMA_SPEECH_MODE=direct` for the boot service on an 8 GB Jetson. Native Gemma audio is an isolated experiment described below, not the reliable vision configuration.
 
 ## Updating an installed companion

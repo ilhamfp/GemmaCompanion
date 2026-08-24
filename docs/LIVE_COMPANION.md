@@ -93,4 +93,17 @@ To restart it:
 sudo systemctl restart gemma-companion.service
 ```
 
+From the development Mac, the same restart is available without an interactive password:
+
+```bash
+make restart
+```
+
+The service installer adds a narrowly scoped sudoers rule for this exact service restart;
+it does not grant general passwordless sudo. Set `GEMMA_REMOTE_HOST=user@host` to override
+the default `iputra@192.168.55.1` target.
+
+The command returns successfully only after the restarted process publishes a fresh companion
+log, both local model endpoints respond, and the grounded startup greeting is recorded.
+
 For a clean shutdown, use Ubuntu's power menu or `sudo poweroff` and wait for shutdown before disconnecting power.

@@ -1,4 +1,4 @@
-.PHONY: runtime companion volume demo-akinator demo-elderly prep-elderly-negative reset
+.PHONY: runtime companion restart volume demo-akinator demo-elderly prep-elderly-negative reset
 
 DEMO_ARGS ?=
 VOLUME ?= 100
@@ -9,6 +9,9 @@ runtime:
 
 companion:
 	@./scripts/run_companion.sh
+
+restart:
+	@./scripts/restart_remote_service.sh
 
 volume:
 	@$(PYTHON) scripts/set_volume.py $(VOLUME)
