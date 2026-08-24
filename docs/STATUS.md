@@ -280,3 +280,17 @@ evidence: |
 fallback_taken: none
 commit: 524652f
 notes: The Mac now uses SSH key authentication plus a sudoers rule restricted to `/usr/bin/systemctl restart gemma-companion.service`; unrelated privileged systemctl commands remain password-protected. The first live test exposed a stale-log race because shutdown updated the previous log's modification time. The verifier now gates on log creation time (or the COMPANION_START timestamp on filesystems without birth time). A future-epoch test rejected stale logs with exit 1 before the final passwordless restart changed PID 61394 to 62039 and credited only the newly created ready-session log.
+
+## M21 Faster reasoning and first audio
+status: DONE
+verified_by: make performance + scripts/test_agentic_audio.py + scripts/test_visual_routing.py + scripts/test_demo_flow.py + scripts/test_scam_vision.py + scripts/test_companion.py
+verified_at: 2026-08-24 10:29 SGT
+evidence: |
+  ordinary_chat_latency: PASS; mean_seconds=1.450; max_seconds=1.995; baseline_mean_seconds=3.949; baseline_max_seconds=4.666; values=1.645,1.995,0.948,0.897,1.766
+  ordinary_chat_improvement_percent: 63.3
+  streaming_first_audio: PASS; seconds=1.108; baseline_seconds=5.740; improvement_percent=80.7; words_preserved=yes; voice=af_heart
+  available_memory_mib: 1722.1; limit: >500
+  result: PASS lower response latency with unchanged ordinary-answer contract
+fallback_taken: none
+commit: 5016644
+notes: Complete first-pass Gemma answers are reused only after a separate model classification confirms KNOWLEDGE; ACTION, CAMERA, invalid, and truncated responses retain the safe tool, fresh-frame, or repair paths. Concurrent boot prefix priming reduced the first physical PTZ result from 1.956 to 0.869 seconds. Chunk-ahead Kokoro playback preserved the cleaned text, word order, af_heart voice, speed, cancellation, and CPU engine while reducing 26-word time-to-first-audio from 5.740 to 1.108 seconds. Thirteen unfamiliar tools, compound move-plus-inspect, three arbitrary fresh-view questions, negative routing controls, the five-beat flow, scam guidance, physical PTZ, fresh vision, Gemma text/image/tools, Whisper accuracy, TTS, and playback cancellation all passed. The optimized service restarted without a password at PID 64691, recorded its warm prefix and grounded boot frame, retained 2.220 GiB in production, and had zero systemd restarts.

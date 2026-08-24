@@ -950,3 +950,46 @@ result: PASS boot service owns a ready offline companion session
 ```
 
 Implementation commit: `524652f`.
+
+## M21 Faster reasoning and first audio
+
+### JETSON — measured baseline and bottleneck profile
+
+The pre-change five-question ordinary-chat run passed semantically but made four sequential model
+calls per request: a first complete answer that the tool parser discarded, a repair call selecting
+`respond_normally`, an evidence-source gate, and then a regenerated answer. Result latencies were
+4.086, 4.666, 3.370, 3.438, and 4.186 seconds (mean 3.949; max 4.666).
+
+The companion's interruptible speech path also bypassed the chunk-ahead implementation already used
+by the TTS acceptance layer. With a warm Kokoro engine and ALSA's null sink, first audio arrived after
+1.122 seconds for 2 words, 5.740 seconds for 26 words, and 10.327 seconds for 38 words. The delay was
+full-waveform synthesis before `aplay`, not model reasoning or hardware playback.
+
+### JETSON — guarded answer reuse, prefix warmup, and chunk-ahead speech
+
+Gemma's complete first response is now reusable only when its finish reason is `stop` and a separate
+Gemma classifier returns exactly KNOWLEDGE. CAMERA goes directly to a fresh frame, ACTION goes through
+the original tool-repair path, and invalid classifications default to ACTION. This keeps the semantic
+safety redundancy while removing answer regeneration. The boot observation primes llama.cpp's second
+slot with the stable action-selection prefix; the first physical movement fell from 1.956 to 0.869
+seconds. Kokoro now synthesizes bounded four-word PCM chunks in a producer while the prior chunk plays;
+the cleaned text, order, voice, speed, engine, and interruption token are unchanged.
+
+Final `make performance` output from the live optimized service:
+
+```text
+ordinary_chat_quality: PASS; cases=5; direct_complete_answers=5
+ordinary_chat_latency: PASS; mean_seconds=1.450; max_seconds=1.995; baseline_mean_seconds=3.949; baseline_max_seconds=4.666; values=1.645,1.995,0.948,0.897,1.766
+ordinary_chat_improvement_percent: 63.3
+streaming_first_audio: PASS; seconds=1.108; baseline_seconds=5.740; improvement_percent=80.7; words_preserved=yes; voice=af_heart
+available_memory_mib: 1722.1; limit: >500
+result: PASS lower response latency with unchanged ordinary-answer contract
+```
+
+Quality regressions passed for all 13 unfamiliar tool paraphrases, compound movement plus inspection,
+three arbitrary fresh-view references, negative chat/finder controls, boot and two-direction vision,
+scam-message guidance, physical PTZ, Gemma text/image/tool inference, neutral Whisper transcription,
+natural TTS, and 0.0155-second playback cancellation. The live service restarted passwordlessly from
+PID 62039 to 64691, logged `AGENT_PREFIX_WARMUP`, published a grounded new boot frame, retained 2.220
+GiB in its real one-Kokoro production state, and reported zero systemd restarts. Implementation commit:
+`5016644`.
