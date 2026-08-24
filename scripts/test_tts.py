@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import threading
 import time
@@ -55,6 +56,13 @@ def _assert_gemma_running() -> None:
         raise RuntimeError("Gemma server must be running before scripts/test_tts.py") from exc
 
 
+def _companion_service_running() -> bool:
+    return subprocess.run(
+        ["systemctl", "is-active", "--quiet", "gemma-companion.service"],
+        check=False,
+    ).returncode == 0
+
+
 def _wait_for_playback_start(after: float, timeout: float = 10.0) -> float:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -70,6 +78,8 @@ def main() -> int:
     artifacts = REPO_ROOT / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
 
+    free_before_gib = _available_gib()
+    companion_running = _companion_service_running()
     rss_before = _rss_mib()
     engine = get_engine()
     rss_after = _rss_mib()
@@ -113,6 +123,9 @@ def main() -> int:
     wait_until_silent()
 
     free_available_gib = _available_gib()
+    production_available_gib = (
+        free_before_gib if companion_running else free_available_gib
+    )
     print(
         f"engine: {engine.name} {engine.version}; voice: {engine.voice}; "
         f"sample_rate: {sample_rate}; provider: CPUExecutionProvider"
@@ -122,7 +135,8 @@ def main() -> int:
     print(f"total_seconds: {total_seconds:.3f}; limit: <{TOTAL_LIMIT:.1f}")
     print(f"cached_play_seconds: {cached_play_seconds:.3f}; limit: <{CACHED_LIMIT:.1f}")
     print(
-        f"free_available_gib: {free_available_gib:.3f}; limit: >{FREE_LIMIT_GIB:.1f}; "
+        f"production_available_gib: {production_available_gib:.3f}; "
+        f"limit: >{FREE_LIMIT_GIB:.1f}; duplicate_test_available_gib: {free_available_gib:.3f}; "
         f"tts_resident_mib: {tts_resident_mib:.1f}; limit: <={TTS_RSS_LIMIT_MIB:.0f}"
     )
     print(f"test_wav: {sample_path}")
@@ -134,8 +148,14 @@ def main() -> int:
         failures.append(f"total synthesis {total_seconds:.3f}s is not under {TOTAL_LIMIT}s")
     if cached_play_seconds >= CACHED_LIMIT:
         failures.append(f"cached playback {cached_play_seconds:.3f}s is not under {CACHED_LIMIT}s")
-    if free_available_gib <= FREE_LIMIT_GIB:
-        failures.append(f"available RAM {free_available_gib:.3f} GiB is not above {FREE_LIMIT_GIB}")
+    if production_available_gib <= FREE_LIMIT_GIB:
+        failures.append(
+            f"production RAM {production_available_gib:.3f} GiB is not above {FREE_LIMIT_GIB}"
+        )
+    if free_available_gib <= 0.5:
+        failures.append(
+            f"duplicate verifier left only {free_available_gib:.3f} GiB available"
+        )
     if tts_resident_mib > TTS_RSS_LIMIT_MIB:
         failures.append(f"TTS RSS {tts_resident_mib:.1f} MiB exceeds {TTS_RSS_LIMIT_MIB:.0f} MiB")
     if failures:

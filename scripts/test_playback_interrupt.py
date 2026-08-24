@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from audio.interruptible import InterruptibleSpeech  # noqa: E402
+from audio.tts import speech_friendly_text, streaming_chunks  # noqa: E402
 
 
 def _tone(path: Path, seconds: float = 5.0) -> None:
@@ -32,6 +33,13 @@ def _tone(path: Path, seconds: float = 5.0) -> None:
 
 
 def main() -> int:
+    chunk_source = "This answer keeps every spoken word while beginning playback much sooner."
+    chunks = streaming_chunks(chunk_source)
+    if " ".join(chunks) != speech_friendly_text(chunk_source):
+        raise AssertionError(f"streaming chunks changed the spoken text: {chunks!r}")
+    if not chunks or any(len(chunk.split()) > 4 for chunk in chunks):
+        raise AssertionError(f"streaming chunks exceeded the latency bound: {chunks!r}")
+
     speech = InterruptibleSpeech()
     with tempfile.TemporaryDirectory(prefix="gemma-cancel-test-") as directory:
         path = Path(directory) / "tone.wav"
@@ -48,6 +56,7 @@ def main() -> int:
         raise AssertionError("playback remained active after cancellation")
     print("playback_started: PASS; source=5.0s generated local WAV")
     print(f"cancel_seconds: {cancel_seconds:.4f}; limit: <0.3000")
+    print(f"streaming_text: PASS; chunks={len(chunks)}; words_preserved=yes")
     print("playback_after_cancel: stopped")
     print("audio_saved: no; temporary test WAV removed")
     print("result: PASS active ALSA playback is physically interruptible")

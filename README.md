@@ -24,14 +24,23 @@ Measured on the Jetson Orin Nano Super:
 | 1024 px live image → text | Gemma 4 E2B Q4_0 / Gemma terms | 1.861 s |
 | Parseable tool call | Gemma 4 E2B Q4_0 / Gemma terms | 0.436 s |
 | Neutral Whisper transcription | whisper.cpp tiny.en Q5_1 / MIT runtime | 1.454–1.470 s |
-| Agentic transcript → physical PTZ | Gemma tool gate + UVC | ≤2.139 s |
-| Agentic fresh visual answer | Gemma tool gate + capture + vision | 4.871 s |
-| Natural TTS, warm first audio | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 1.311 s |
+| Unfamiliar ordinary answer, mean | Gemma semantic gate / CUDA | 1.450 s (was 3.949 s) |
+| First agentic transcript → physical PTZ | Gemma tool gate + UVC | 0.869 s (was 1.956 s) |
+| Agentic fresh visual answer | Gemma tool gate + capture + vision | 4.289 s |
+| Companion dynamic answer → first audio, 26 words | Kokoro-82M `af_heart` / CPU | 1.108 s (was 5.740 s) |
+| Natural TTS, warm first audio | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 1.296 s |
 | Natural TTS, cached clip start | Kokoro-82M via kokoro-onnx 0.6.1, `af_heart` / Apache-2.0 model, MIT runtime | 0.005 s |
 | Full Akinator games | End-to-end application / MIT | 21.506–40.590 s |
 | Full requested-object finder runs | End-to-end application / MIT | 24.835–25.627 s |
 
-The final physical companion regression retained 2.5 GiB available. A separate TTS verifier, which temporarily loaded a second Kokoro instance alongside the boot service, retained 2.114 GiB and measured 414.9 MiB TTS RSS. The loop aborts below 500 MiB.
+The optimized boot service retained 2.220 GiB available. A separate verifier temporarily loaded a second Kokoro instance, retained 1.688 GiB in that deliberately duplicated state, and measured 412.7 MiB TTS RSS. The production loop aborts below 500 MiB.
+
+The latency improvement does not use a phrase router or a smaller model. Gemma's completed first
+answer is reused only after a separate semantic gate confirms that the request needs KNOWLEDGE rather
+than an ACTION or fresh CAMERA evidence; uncertain classifications take the safe action path. During
+boot, llama.cpp's second slot is primed with the stable tool-selection prefix. Kokoro preserves the
+same cleaned text, voice, speed, and word order while synthesizing short PCM chunks ahead of playback,
+so long answers begin speaking without waiting for the entire waveform.
 
 ## Architecture
 
@@ -120,6 +129,7 @@ Run these before installing the boot service. The PTZ and companion checks physi
 ./scripts/test_gemma.py
 ./scripts/test_tts.py
 ./scripts/test_companion.py
+make performance
 ```
 
 For the real microphone check, run `./scripts/test_audio.py` without `--text` and repeat the prompted sentence. Every verifier exits nonzero on failure and prints its accepted frame, device, latency, and/or memory evidence.

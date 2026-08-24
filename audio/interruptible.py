@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import queue
 import subprocess
 import tempfile
 import threading
@@ -10,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from .tts import synthesize
+from .tts import streaming_chunks, synthesize
 
 DEFAULT_PLAYBACK_DEVICE = "plughw:CARD=Device,DEV=0"
 
@@ -150,12 +151,50 @@ class InterruptibleSpeech:
             return token == self._generation
 
     def _synthesize_and_play(self, token: int, text: str, words_per_minute: int) -> None:
+        completed = object()
+        pending: queue.Queue[str | BaseException | object] = queue.Queue()
+
         try:
             with tempfile.TemporaryDirectory(prefix="gemma-interruptible-speech-") as directory:
-                with self._synthesis_lock:
-                    path = synthesize(text, directory, words_per_minute=words_per_minute)
-                if self._is_current(token):
-                    self._play(token, path)
+                chunks = streaming_chunks(text)
+
+                def produce() -> None:
+                    try:
+                        for chunk in chunks:
+                            if not self._is_current(token):
+                                break
+                            with self._synthesis_lock:
+                                path = synthesize(
+                                    chunk,
+                                    directory,
+                                    words_per_minute=words_per_minute,
+                                )
+                            if not self._is_current(token):
+                                break
+                            pending.put(path)
+                    except BaseException as exc:
+                        pending.put(exc)
+                    finally:
+                        pending.put(completed)
+
+                producer = threading.Thread(
+                    target=produce,
+                    name=f"gemma-synthesis-{token}",
+                    daemon=True,
+                )
+                producer.start()
+                try:
+                    while self._is_current(token):
+                        item = pending.get()
+                        if item is completed:
+                            break
+                        if isinstance(item, BaseException):
+                            raise item
+                        self._play(token, item)
+                finally:
+                    producer.join(timeout=30)
+                    if producer.is_alive():
+                        raise TimeoutError("speech synthesis did not stop within 30 seconds")
         except BaseException as exc:
             if self._is_current(token):
                 self.last_error = exc

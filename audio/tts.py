@@ -467,7 +467,7 @@ def _sentences(text: str) -> list[str]:
     return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
 
 
-def _streaming_chunks(text: str, *, max_words: int = 4) -> list[str]:
+def streaming_chunks(text: str, *, max_words: int = 4) -> list[str]:
     """Keep first-audio latency bounded while preserving sentence order."""
 
     chunks: list[str] = []
@@ -496,6 +496,6 @@ def speak(text: str, *, words_per_minute: int = 135) -> None:
     # Sentences retain their order and are further divided into short PCM
     # windows because the CPU ONNX graph emits only complete tensors. Each
     # window is queued as soon as it is ready, so playback overlaps rendering.
-    for chunk in _streaming_chunks(clean):
+    for chunk in streaming_chunks(clean):
         _enqueue(synthesize(chunk, words_per_minute=words_per_minute))
     wait_until_silent()

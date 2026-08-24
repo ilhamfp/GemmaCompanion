@@ -78,15 +78,20 @@ asking what this device is uses inspect_view. General facts about colors use res
 color of the item the user is holding uses inspect_view.
 If the prior text narrated a physical action, call that action. Use respond_normally only for
 language-knowledge requests with no current physical referent. Call exactly one function and no prose."""
-EVIDENCE_SOURCE_PROMPT = """Classify the evidence source needed by the user's request. Output exactly
-CAMERA or KNOWLEDGE.
-CAMERA means a correct answer requires fresh pixels from the user's live environment: a current object,
-scene, appearance, writing, screen, label, or communication being physically shown, held, presented,
-pointed at, nearby, or referenced deictically.
-KNOWLEDGE means no fresh physical evidence is needed: general facts, hypotheticals, ordinary conversation,
-or recalling established conversation.
+REQUEST_REQUIREMENT_PROMPT = """Classify what the user's request requires. Output exactly ACTION,
+CAMERA, or KNOWLEDGE.
+ACTION means a device action or systematic search is required: moving or aiming the camera, finding an
+object, changing speaker volume, stopping speech, or sleeping. When both movement and seeing are
+requested, choose ACTION.
+CAMERA means no other action is requested but a correct answer requires fresh pixels from the live
+environment: a current object, scene, appearance, writing, screen, label, message, or communication
+being shown, held, presented, pointed at, nearby, or referenced by this, that, these, or those.
+KNOWLEDGE means the request can be answered from language knowledge or conversation without a device
+action or fresh physical evidence.
 Examples:
-- Is the email on the phone I am showing fraudulent? -> CAMERA
+- Turn left and describe the scene. -> ACTION
+- Find my glasses. -> ACTION
+- Is this message a scam? -> CAMERA
 - What warning signs are common in fraudulent emails? -> KNOWLEDGE
 - Which color is this item in my hand? -> CAMERA
 - Why do leaves look green? -> KNOWLEDGE"""
@@ -272,6 +277,7 @@ class CompanionSession:
             self._capture_turn = token
         if announce_scene:
             self._spawn(self._announce_ready, token)
+            self._spawn(self._warm_agent_decision, token)
         else:
             self._respond(READY_CUE, token)
         self._log("COMPANION_START", turn=token, microphone=self.microphone_enabled)
@@ -452,6 +458,34 @@ class CompanionSession:
             self._log("BOOT_OBSERVE_FALLBACK", turn=token, error=str(exc))
         self._respond(response, token)
 
+    def _warm_agent_decision(self, token: int) -> None:
+        """Prime the second llama.cpp slot with the stable action-selection prefix."""
+
+        try:
+            warm_client = GemmaClient(model=self.gemma.model, endpoint=self.gemma.endpoint)
+            warm_client.step(
+                [
+                    {"role": "system", "content": AGENT_DECISION_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Physical state: awake; camera direction: center.\n"
+                            "User request: Briefly acknowledge that you are ready."
+                        ),
+                    },
+                ],
+                tools=COMPANION_DECISION_SCHEMAS,
+                max_tokens=1,
+                tool_choice="required",
+            )
+            self._log(
+                "AGENT_PREFIX_WARMUP",
+                turn=token,
+                model_latency_seconds=round(warm_client.last_latency_seconds, 3),
+            )
+        except Exception as exc:
+            self._log("AGENT_PREFIX_WARMUP_SKIPPED", turn=token, error=str(exc))
+
     def _move(self, direction: str, token: int) -> None:
         functions = {
             "left": look_left,
@@ -586,12 +620,12 @@ class CompanionSession:
         )
         return "inspect_view" in selected
 
-    def _requires_fresh_camera(
+    def _request_requirement(
         self,
         request: str | None,
         audio_path: str | None,
         token: int,
-    ) -> bool:
+    ) -> str:
         user_content = (
             request
             if request is not None
@@ -599,20 +633,38 @@ class CompanionSession:
         )
         response, _ = self.gemma.step(
             [
-                {"role": "system", "content": EVIDENCE_SOURCE_PROMPT},
+                {"role": "system", "content": REQUEST_REQUIREMENT_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             audios=[audio_path] if audio_path else None,
             max_tokens=4,
         )
         classification = response.strip().split(maxsplit=1)[0].strip("`.,:").casefold()
+        if classification not in {"action", "camera", "knowledge"}:
+            classification = "action"
         self._log(
-            "EVIDENCE_SOURCE_DECISION",
+            "REQUEST_REQUIREMENT_DECISION",
             turn=token,
             classification=classification,
             model_latency_seconds=round(self.gemma.last_latency_seconds, 3),
         )
-        return classification == "camera"
+        return classification
+
+    @staticmethod
+    def _repair_messages(text: str | None, response: str) -> list[dict]:
+        return [
+            {"role": "system", "content": AGENT_DECISION_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    text
+                    if text is not None
+                    else "Treat the attached audio as the user's original request."
+                ),
+            },
+            {"role": "assistant", "content": response},
+            {"role": "user", "content": TOOL_REPAIR_PROMPT},
+        ]
 
     def _find_object(
         self,
@@ -713,9 +765,10 @@ class CompanionSession:
                 messages,
                 tools=COMPANION_DECISION_SCHEMAS,
                 audios=[audio_path] if audio_path else None,
-                max_tokens=24,
+                max_tokens=64 if round_index == 1 else 24,
                 tool_choice="required",
             )
+            response_completed = self.gemma.last_finish_reason == "stop"
             if not self._is_current(token):
                 result = self._result("stale_cancelled", "", None, started)
                 self._publish_result(result, token, speak=False)
@@ -733,25 +786,29 @@ class CompanionSession:
             )
             if not calls:
                 if round_index == 1:
-                    messages = [
-                        {"role": "system", "content": AGENT_DECISION_PROMPT},
-                        {
-                            "role": "user",
-                            "content": (
-                                text
-                                if text is not None
-                                else "Treat the attached audio as the user's original request."
-                            ),
-                        },
-                        {
-                            "role": "assistant",
-                            "content": response,
-                        },
-                        {
-                            "role": "user",
-                            "content": TOOL_REPAIR_PROMPT,
-                        },
-                    ]
+                    requirement = self._request_requirement(text, audio_path, token)
+                    if not self._is_current(token):
+                        result = self._result("stale_cancelled", "", None, started)
+                        self._publish_result(result, token, speak=False)
+                        return result
+                    if requirement == "camera":
+                        return self._answer_visual(
+                            text,
+                            token,
+                            started,
+                            audio_path=audio_path,
+                        )
+                    if requirement == "knowledge" and response and response_completed:
+                        self._remember_turn(text, response, token)
+                        result = self._result("chat", response, None, started)
+                        self._log(
+                            "DIRECT_KNOWLEDGE_RESPONSE",
+                            turn=token,
+                            saved_regeneration=True,
+                        )
+                        self._publish_result(result, token)
+                        return result
+                    messages = self._repair_messages(text, response)
                     continue
                 break
 
@@ -767,6 +824,7 @@ class CompanionSession:
 
             inspect_requested = False
             made_progress = False
+            retry_requested = False
             for call in normalized_calls:
                 selected_tool = tool_name(call)
                 arguments = (call.get("function") or {}).get("arguments") or {}
@@ -797,18 +855,25 @@ class CompanionSession:
                         return self._find_object(request, target, token, started)
                     continue
                 if selected_tool == "respond_normally":
-                    needs_camera = self._requires_fresh_camera(text, audio_path, token)
+                    requirement = self._request_requirement(text, audio_path, token)
                     if not self._is_current(token):
                         result = self._result("stale_cancelled", "", None, started)
                         self._publish_result(result, token, speak=False)
                         return result
-                    if needs_camera:
+                    if requirement == "camera":
                         return self._answer_visual(
                             text,
                             token,
                             started,
                             audio_path=audio_path,
                         )
+                    if requirement == "action":
+                        if round_index == 1:
+                            messages = self._repair_messages(text, response)
+                            made_progress = False
+                            retry_requested = True
+                            break
+                        continue
                     final_text, _ = self.gemma.step(
                         [
                             {"role": "system", "content": CONVERSATION_PROMPT},
@@ -885,6 +950,8 @@ class CompanionSession:
                     }
                 )
 
+            if retry_requested:
+                continue
             if inspect_requested:
                 action = f"look_{moved[-1]}_and_inspect" if moved else "visual_question"
                 return self._answer_visual(

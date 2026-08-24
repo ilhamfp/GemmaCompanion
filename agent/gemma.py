@@ -28,6 +28,15 @@ class GemmaClient:
         self.last_response: dict[str, Any] = {}
         self.last_latency_seconds = 0.0
 
+    @property
+    def last_finish_reason(self) -> str:
+        """Return the completion reason for the most recent model step."""
+
+        choices = self.last_response.get("choices") or []
+        if not choices:
+            return ""
+        return str(choices[0].get("finish_reason") or "")
+
     def _request(self, route: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(

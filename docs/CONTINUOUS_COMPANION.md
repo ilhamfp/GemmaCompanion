@@ -85,6 +85,13 @@ All thresholds are environment-overridable and must be tuned only through the ph
 
 `scripts/run_companion.sh` is the service entry point. It waits for `/dev/video0` and the stable ALSA card alias `Device`, starts the local Gemma and Whisper servers if necessary, then runs the companion with the repository virtual environment when available. Gemma uses two parallel slots in a 4096-token shared context, allowing a newer turn to begin while an older turn is being invalidated. The companion checks model health every five seconds; systemd restarts it after a process failure. Logs go to the system journal plus the application JSONL session log.
 
+The boot observation and an action-prefix warmup occupy the two Gemma slots concurrently, so the first
+physical request after the greeting reuses the action-selection prefix. If the function gate emits a
+complete ordinary answer directly, a second Gemma classification must confirm KNOWLEDGE before that
+answer is reused; ACTION and CAMERA classifications retain the full tool or fresh-frame paths. Spoken
+answers use the same Kokoro voice and text but synthesize bounded chunks one step ahead of playback,
+which reduces time to first audio while preserving word order and interruption semantics.
+
 True headless power-on startup uses `deploy/gemma-companion.service`. Installing or enabling it changes system configuration and therefore remains a one-time human-authorized sudo step. A reboot is a separate final acceptance gate.
 
 ## Native-audio experiment
