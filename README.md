@@ -8,6 +8,11 @@
 - The elderly-friendly finder locates what you have misplaced and describes where it is in plain speech.
 - The entire perception-and-action loop runs locally on one 8 GB Jetson; the Mac is development-only.
 
+<p align="center">
+  <img src="docs/assets/gemma-companion-prototype.jpg" width="680" alt="Gemma Companion prototype with an OBSBOT camera, NVIDIA Jetson Orin Nano, and Audio-Technica speakerphone connected on a development bench">
+</p>
+<p align="center"><em>The assembled prototype: the Jetson runs the companion while the camera and speakerphone connect over USB.</em></p>
+
 Gemma Companion is built for **Best Use of Gemma** (primary) and **Best Elderly Hack** (secondary).
 
 ## What happens when someone talks to Gemma
@@ -109,6 +114,11 @@ Video is never streamed into the model. A session starts with bounded observatio
 
 The released configuration is intentionally hardware-specific. Three visible devices make up the
 companion; an internal NVMe drive keeps all of its software and data local.
+
+<p align="center">
+  <img src="docs/assets/gemma-companion-hardware.jpg" width="680" alt="OBSBOT Tiny SE, Audio-Technica AT-CSP1, and NVIDIA Jetson Orin Nano Developer Kit retail boxes">
+</p>
+<p align="center"><em>The released hardware stack: OBSBOT Tiny SE, Audio-Technica AT-CSP1, and NVIDIA Jetson Orin Nano Developer Kit.</em></p>
 
 | Hardware | Role | What it does |
 |---|---|---|
