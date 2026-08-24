@@ -109,6 +109,7 @@ The tested hardware needs no overrides. These environment variables tune the acc
 | `GEMMA_TTS_VOICE` | `af_heart` | Kokoro voice name |
 | `GEMMA_TTS_SPEED` | `1.08` | Speech speed, 0.5–2.0 |
 | `GEMMA_TTS_THREADS` | `6` | CPU threads reserved for Kokoro |
+| `GEMMA_WHISPER_AUDIO_CONTEXT` | `1280` | Conservative speech context; verified against the 12-second segment bound |
 | `GEMMA_VOICE_START_RMS` | `700` | Calibrated voice-onset threshold |
 | `GEMMA_VOICE_END_RMS` | `350` | Calibrated mute/silence threshold |
 

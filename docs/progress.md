@@ -993,3 +993,71 @@ natural TTS, and 0.0155-second playback cancellation. The live service restarted
 PID 62039 to 64691, logged `AGENT_PREFIX_WARMUP`, published a grounded new boot frame, retained 2.220
 GiB in its real one-Kokoro production state, and reported zero systemd restarts. Implementation commit:
 `5016644`.
+
+## M22 Native-audio embodiment and smoother production speech
+
+### JETSON — native audio through a complete physical result
+
+The existing route-only experiment was extended into a switchable service profile. A gitignored
+`.runtime/companion.env` can select `GEMMA_SPEECH_MODE=direct`; the launcher then stops Whisper and
+fingerprints a one-slot, 3072-context, Q8-KV Gemma server. Reusing the GPU projector after any prior
+image request crashed both the accepted two-slot server and a reduced one-slot server during audio
+encoding. The crash-safe default therefore moves only the multimodal projector to CPU and bounds
+fresh frames and the four-panel edge sheet to 512 pixels. The model helper processes also close the
+companion lock descriptor, fixing a stale-lock restart race found during profile switching.
+
+CPU projection made a 512-pixel observation take about 24 seconds, versus 92.098 seconds for the old
+1024-pixel detail sheet. The first complete attempt correctly found the glasses but exposed two output
+issues: llama.cpp narrated `I see glasses. They are on the table.` instead of serializing the tool, and
+the companion printed its already-spoken terminal result a second time. A grounded narration parser now
+requires positive `DETECTED:` evidence, the requested target, a non-negative sentence, and a physical
+anchor; rejection tests cover absent evidence and negative narration. The finder now emits the final
+result once and uses natural singular/plural grammar.
+
+The clean final verifier ran with Whisper stopped and exited 0:
+
+```text
+direct_audio_profile: slots=1; memory_before_mib=3036.1
+You: [direct audio]
+Gemma: You want me to find your glasses, is that right?
+Gemma: One moment.
+Gemma: Your glasses are on the table.
+direct_audio_embodied: PASS; action=find_found; direction=center; latency_seconds=32.368; response=Your glasses are on the table.
+direct_audio_health: PASS; memory_after_mib=3034.6; gemma_http=200
+result: PASS Gemma consumed audio and completed an embodied action without Whisper
+```
+
+This proves direct audio can understand, choose a tool, move/see, and finish an embodied turn. It also
+proves why it is not the stage default: even the first-frame success took 32.368 seconds, while a bounded
+sweep can take minutes. The service was restored to the two-slot GPU profile with resident Whisper.
+
+### JETSON — Whisper context and production regression
+
+Six Whisper threads were decisively fastest on the same WAV: medians were 1.387 seconds with six,
+1.659 with five, and 2.036 with four. Audio-context experiments produced 0.409, 0.492, 0.700, 0.922,
+1.155, and 1.386-second medians at 384, 512, 768, 1024, 1280, and the full default respectively.
+The aggressive settings were rejected because sampled noisy utterances drifted. The accepted 1280
+profile matched 11/12 full-context transcripts exactly; the only difference was `Cub` versus `cup`,
+and the longest 5.7-second utterance remained verbatim. On a newly restarted resident server, the real
+`Find my glasses` verifier then passed at 1.315 seconds after the prior full-context cold result had
+missed the 1.500-second gate at 1.571 seconds.
+
+Final restored-production evidence:
+
+```text
+transcript: Find my glasses.
+latency_seconds: 1.315; limit: <1.500
+agentic_moves: PASS; paraphrase_sequence=look_left,look_right,look_center; max_latency_seconds=1.030
+fresh_vision: PASS; direction=center; latency_seconds=3.897; response=The scene shows a close-up of a large package, possibly a supplement, with text and a barcode visible. There is also a computer monitor in the background.
+ordinary_chat_latency: PASS; mean_seconds=1.931; max_seconds=2.962; baseline_mean_seconds=3.949; baseline_max_seconds=4.666; values=2.962,2.434,1.154,1.000,2.102
+streaming_first_audio: PASS; seconds=1.113; baseline_seconds=5.740; improvement_percent=80.6; words_preserved=yes; voice=af_heart
+cancel_seconds: 0.0155; limit: <0.3000
+first_audio_seconds: 1.304; limit: <1.5
+production_available_gib: 2.549; limit: >2.0; duplicate_test_available_gib: 2.026; tts_resident_mib: 416.8; limit: <=800
+continuous_session: PASS; grounded_readiness=yes; log=/home/iputra/gemma-companion/logs/companion-20260824-224618-726892.jsonl
+result: PASS boot service owns a ready offline companion session
+```
+
+The final service used Gemma parallel=2/context=4096/GPU projector, Whisper threads=6/audio-context=1280,
+had both model endpoints HTTP 200, and reported zero systemd restarts. Implementation commit: `e8380e6`.
+No GitHub push was performed.

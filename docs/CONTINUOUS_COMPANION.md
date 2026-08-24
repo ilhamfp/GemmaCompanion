@@ -75,7 +75,7 @@ All thresholds are environment-overridable and must be tuned only through the ph
 
 - voice onset to current playback cancellation: under 300 ms
 - mute/end-of-speech to completed segment: under 600 ms
-- real utterance Whisper transcription: under 1.5 seconds (observed 1.454--1.470 seconds)
+- real utterance Whisper transcription: under 1.5 seconds (observed 1.315 seconds from an idle server)
 - completed transcript to bounded gimbal result: under 3 seconds (observed maximum 2.139 seconds)
 - fresh-image answer after transcript: under 8 seconds (observed 4.871 seconds)
 - stale response after a newer utterance: never spoken
@@ -83,7 +83,7 @@ All thresholds are environment-overridable and must be tuned only through the ph
 
 ## Boot behavior
 
-`scripts/run_companion.sh` is the service entry point. It waits for `/dev/video0` and the stable ALSA card alias `Device`, starts the local Gemma and Whisper servers if necessary, then runs the companion with the repository virtual environment when available. Gemma uses two parallel slots in a 4096-token shared context, allowing a newer turn to begin while an older turn is being invalidated. The companion checks model health every five seconds; systemd restarts it after a process failure. Logs go to the system journal plus the application JSONL session log.
+`scripts/run_companion.sh` is the service entry point. It waits for `/dev/video0` and the stable ALSA card alias `Device`, starts the local Gemma and Whisper servers if necessary, then runs the companion with the repository virtual environment when available. Gemma uses two parallel slots in a 4096-token shared context, allowing a newer turn to begin while an older turn is being invalidated. Resident Whisper uses six CPU threads and a conservative 1280-frame audio context, comfortably above the 12-second segment bound; this reduced the accepted real-WAV result from a 1.571-second cold miss to 1.315 seconds. The companion checks model health every five seconds; systemd restarts it after a process failure. Logs go to the system journal plus the application JSONL session log.
 
 The boot observation and an action-prefix warmup occupy the two Gemma slots concurrently, so the first
 physical request after the greeting reuses the action-selection prefix. If the function gate emits a
@@ -96,9 +96,11 @@ True headless power-on startup uses `deploy/gemma-companion.service`. Installing
 
 ## Native-audio experiment
 
-The loaded Gemma 4 projector advertises audio input, and a real `Find my glasses` WAV selected `find_object` directly in 2.524 seconds without Whisper. The experiment had 2.888 GiB available and is reproducible with `scripts/experiment_direct_audio.py` on a freshly started `GEMMA_PARALLEL=1` server.
+The loaded Gemma 4 projector advertises audio input. In the first isolated route-only experiment, a real `Find my glasses` WAV selected `find_object` in 2.524 seconds without Whisper. The complete crash-safe profile was then proven through `scripts/test_direct_audio_companion.py`: Gemma consumed the same WAV, selected the finder, physically inspected the scene, found the glasses at center, and answered in 32.368 seconds with 3.035 GiB available and Gemma still HTTP 200.
 
-This is not the boot default. On the 8 GB Jetson, mixing native audio and later GPU vision in the same resident process can exhaust CUDA memory; using a CPU projector avoided that crash but made vision exceed the latency target. The reliable stage configuration therefore keeps Whisper for speech and GPU Gemma for reasoning/vision. `GEMMA_SPEECH_MODE=direct` remains an explicit experimental code path, not a production recommendation.
+The experimental profile is selected by putting `GEMMA_SPEECH_MODE=direct` in the gitignored `.runtime/companion.env` and restarting the service. `run_companion.sh` then stops resident Whisper, switches Gemma to one 3072-token slot with Q8 KV, moves the multimodal projector to CPU, and bounds both ordinary and edge-detail frames to 512 pixels. `ensure_gemma.sh` fingerprints these settings, so switching the file back to `whisper` or removing it restarts the managed model with the production profile. Model helper processes close the companion lock descriptor before launch, preventing them from keeping a stale session lock across restarts.
+
+This is not the boot default. Both the production two-slot server and a one-slot GPU profile crashed during native-audio encoding after a prior image request. CPU projector mode avoided the crash, but each 512-pixel visual observation took about 24 seconds; the accepted complete find was still 32.368 seconds even though the target appeared in the first frame. The reliable stage configuration therefore keeps the 1.315-second local Whisper path and GPU Gemma vision. Direct mode is reproducible research infrastructure, not a live-demo recommendation.
 
 ## Verification order
 

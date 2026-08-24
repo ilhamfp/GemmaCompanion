@@ -108,6 +108,7 @@ Measured on the accepted Jetson—not cloud estimates or latency guarantees:
 
 | Operation | Measured latency |
 |---|---:|
+| Real speech → local transcript | 1.315 s |
 | Gemma text → text | 0.301 s |
 | Live 1024 px image → text | 1.861 s |
 | Transcript → physical PTZ | 0.869 s |
@@ -130,7 +131,7 @@ The production service retained 2.220 GiB available memory and refuses model inf
 
 **Staged:** recognizable room objects and the example scam SMS. No model output or tool action is replaced by a prerecorded response. The repeatable Akinator verifier used a scripted truthful text respondent while Gemma's questions, vision, movement, guesses, speech, and logs remained live.
 
-**Honest fallbacks:** the original M7 target became the visible Audio-Technica speaker when glasses could not be staged inside the useful sweep; the generic finder still accepts other objects. Native Gemma audio was proven experimentally, but mixing its audio and GPU vision projectors can exhaust 8 GB CUDA memory, so the reliable service uses local Whisper. Kokoro is the accepted voice; eSpeak NG remains only a warning-logged fallback.
+**Honest fallbacks:** the original M7 target became the visible Audio-Technica speaker when glasses could not be staged inside the useful sweep; the generic finder still accepts other objects. Native Gemma audio completed a real embodied find in 32.368 seconds, but safe CPU-projected vision is too slow and mixed GPU audio/vision can exhaust 8 GB CUDA memory, so the reliable service uses local Whisper. Kokoro is the accepted voice; eSpeak NG remains only a warning-logged fallback.
 
 ## Documentation
 

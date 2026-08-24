@@ -294,3 +294,19 @@ evidence: |
 fallback_taken: none
 commit: 5016644
 notes: Complete first-pass Gemma answers are reused only after a separate model classification confirms KNOWLEDGE; ACTION, CAMERA, invalid, and truncated responses retain the safe tool, fresh-frame, or repair paths. Concurrent boot prefix priming reduced the first physical PTZ result from 1.956 to 0.869 seconds. Chunk-ahead Kokoro playback preserved the cleaned text, word order, af_heart voice, speed, cancellation, and CPU engine while reducing 26-word time-to-first-audio from 5.740 to 1.108 seconds. Thirteen unfamiliar tools, compound move-plus-inspect, three arbitrary fresh-view questions, negative routing controls, the five-beat flow, scam guidance, physical PTZ, fresh vision, Gemma text/image/tools, Whisper accuracy, TTS, and playback cancellation all passed. The optimized service restarted without a password at PID 64691, recorded its warm prefix and grounded boot frame, retained 2.220 GiB in production, and had zero systemd restarts.
+
+## M22 Native-audio embodiment and smoother production speech
+status: DONE
+verified_by: scripts/test_direct_audio_companion.py + scripts/test_fast_stt.py + scripts/test_companion.py + scripts/test_performance.py + scripts/test_playback_interrupt.py + scripts/test_tts.py + scripts/test_boot_service.sh
+verified_at: 2026-08-24 22:50 SGT
+evidence: |
+  direct_audio_embodied: PASS; action=find_found; direction=center; latency_seconds=32.368; response=Your glasses are on the table.
+  direct_audio_health: PASS; memory_after_mib=3034.6; gemma_http=200
+  latency_seconds: 1.315; limit: <1.500
+  fresh_vision: PASS; direction=center; latency_seconds=3.897; response=The scene shows a close-up of a large package, possibly a supplement, with text and a barcode visible. There is also a computer monitor in the background.
+  streaming_first_audio: PASS; seconds=1.113; baseline_seconds=5.740; improvement_percent=80.6; words_preserved=yes; voice=af_heart
+  cancel_seconds: 0.0155; limit: <0.3000
+  result: PASS boot service owns a ready offline companion session
+fallback_taken: Whisper remains the boot default because native audio plus GPU vision is not memory-safe on the 8 GB Jetson, while crash-safe CPU-projected vision made the complete direct-audio find take 32.368 seconds.
+commit: e8380e6
+notes: The real `Find my glasses` WAV now proves more than route selection: with Whisper stopped, Gemma selected `find_object`, moved and inspected through the OBSBOT, returned a grounded location once, and stayed healthy with 3.035 GiB available. Direct mode has a reproducible one-slot/Q8/CPU-projector/512-pixel profile and managed profile switching; production remains two-slot GPU vision. Bounding Whisper's audio context conservatively at 1280 reduced an idle first transcript from 1.571 to 1.315 seconds. Six threads beat five and four, aggressive 384/512/768 contexts were rejected after transcript drift, and 1280 preserved 11/12 sampled baseline transcripts exactly with the only difference `Cub` versus the physically plausible `cup`; the longest 5.7-second sample stayed verbatim. Full production Gemma, physical PTZ, fresh vision, ordinary chat, streamed TTS, playback interruption, natural TTS, grounded boot, local endpoints, zero service restarts, and memory guards passed after restoration. No GitHub push was performed in this milestone.
