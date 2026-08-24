@@ -139,6 +139,15 @@ def preserves_target_identity(original: str, candidate: str) -> bool:
     return bool(candidate) and len(candidate) <= 160 and identity_tokens <= candidate_tokens
 
 
+def normalize_finder_target(target: str) -> str:
+    """Expand a known ambiguous product shorthand into its demo-visible form."""
+
+    clean = " ".join(target.split())
+    if re.fullmatch(r"(?:apple\s+)?air\s*pods?", clean, flags=re.IGNORECASE):
+        return "small white Apple AirPods wireless-earbud charging case"
+    return clean
+
+
 @dataclass(frozen=True)
 class CompanionResult:
     action: str
@@ -673,12 +682,18 @@ class CompanionSession:
         token: int,
         started: float,
     ) -> CompanionResult:
+        visual_target = normalize_finder_target(target)
         self._log(
             "FINDER_HANDOFF",
             turn=token,
             request=request,
-            target=target,
-            target_source="gemma_tool_argument",
+            requested_target=target,
+            target=visual_target,
+            target_source=(
+                "canonical_visual_target"
+                if visual_target != target
+                else "gemma_tool_argument"
+            ),
         )
         finder = ElderlyFinder(
             speech=False,
@@ -689,7 +704,11 @@ class CompanionSession:
             camera_lock=self._camera_lock,
         )
         try:
-            found = finder.search_live(request, target=target)
+            found = finder.search_live(
+                request,
+                target=visual_target,
+                spoken_target=target,
+            )
         except FinderCancelled:
             with self._camera_lock:
                 look_center()

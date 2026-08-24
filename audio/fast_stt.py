@@ -16,7 +16,8 @@ from .stt import TranscriptionError, transcribe as transcribe_cli
 DEFAULT_ENDPOINT = "http://127.0.0.1:8178/inference"
 COMPANION_SPEECH_CONTEXT = (
     "Gemma Companion. OBSBOT camera. Audio-Technica speaker. Apple AirPods charging case. "
-    "smartphone. iPhone. glasses. visual scene. speaker loudness."
+    "smartphone. iPhone. glasses. tissue. tissue box. keys. wallet. remote control. "
+    "bottle. cup. visual scene. speaker loudness."
 )
 
 

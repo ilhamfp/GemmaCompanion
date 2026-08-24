@@ -10,7 +10,7 @@ threads="${GEMMA_WHISPER_THREADS:-6}"
 audio_context="${GEMMA_WHISPER_AUDIO_CONTEXT:-1280}"
 health="http://127.0.0.1:$port/health"
 pid_file="$repo_root/.runtime/whisper-server.pid"
-prompt="Gemma Companion. OBSBOT camera. Audio-Technica speaker. Apple AirPods charging case. smartphone. iPhone. glasses. visual scene. speaker loudness."
+prompt="Gemma Companion. OBSBOT camera. Audio-Technica speaker. Apple AirPods charging case. smartphone. iPhone. glasses. tissue. tissue box. keys. wallet. remote control. bottle. cup. visual scene. speaker loudness."
 
 server_healthy() {
   python3 - "$health" <<'PY'

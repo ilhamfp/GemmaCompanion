@@ -25,7 +25,7 @@ At boot, the Jetson starts the companion, centers the camera, inspects a fresh f
 4. The OBSBOT acts and captures discrete stills only when the selected tool needs them.
 5. Gemma grounds its answer in the action or image, and Kokoro speaks it through the AT-CSP1.
 
-On detected voice onset, current playback is cancelled promptly so the newest request can redirect the companion. Normal use requires no Mac, terminal, Wi-Fi, or cloud connection.
+For a find request, the OBSBOT first establishes a level pose, then checks overlapping views and waits for the gimbal to settle before judging each image. On detected voice onset, current playback is cancelled promptly so the newest request can redirect the companion. Normal use requires no Mac, terminal, Wi-Fi, or cloud connection.
 
 ## Architecture
 
@@ -100,6 +100,8 @@ make demo-elderly                     # fixed text finder acceptance target
 
 `make demo-elderly` reproduces the verified Audio-Technica-speaker target. Use `make companion` for a live voice request to find AirPods or another visible object. Follow the [no-Mac runbook](docs/LIVE_COMPANION.md) for physical operation and the [five-beat demo flow](docs/DEMO_FLOW.md) for the presentation.
 
+The accepted AirPods test completed a real camera sweep and grounded the case **near a laptop in 35.153 seconds**. Search favors reliable, settled images over fast in-motion captures.
+
 ## Why Gemma fits on the edge
 
 The accepted model is **Gemma 4 E2B instruction-tuned QAT Q4_0**, served by the OpenAI-compatible `llama-server` bundled with Ollama 0.32.15 and its JetPack 6 CUDA backend. The 3.10 GiB text model plus 942 MiB multimodal projector fit the 8 GB device because of the E2B 4-bit quantization. Gemma handles text reasoning, image understanding, and physical tool selection; Whisper performs speech recognition and Kokoro produces speech.
@@ -114,6 +116,7 @@ Measured on the accepted Jetson—not cloud estimates or latency guarantees:
 | Transcript → physical PTZ | 0.869 s |
 | Agentic fresh visual answer | 4.289 s |
 | Dynamic answer → first audio | 1.108 s |
+| Live AirPods search → grounded location | 35.153 s |
 
 The production service retained 2.220 GiB available memory and refuses model inference below a 500 MiB guard. See [STATUS.md](docs/STATUS.md) for verbatim milestone evidence, [progress.md](docs/progress.md) for the command history, and [memory-budget.md](docs/memory-budget.md) for full measurements.
 
@@ -122,7 +125,7 @@ The production service retained 2.220 GiB available memory and refuses model inf
 - Runtime inference and device control stay on the Jetson after setup; there is no cloud API.
 - Raw audio is processed in memory. A detected utterance becomes a temporary WAV for Whisper and is deleted after transcription.
 - Boot- and tool-triggered JPEGs, transcripts, and session events remain local but persist in `captures/` and `logs/` until removed. There is no continuous video stream.
-- PTZ is bounded to ±120° pan and ±30° tilt. Searches are bounded, and a not-found answer is valid—Gemma must not invent a location.
+- PTZ is bounded to ±120° pan and ±30° tilt. The finder uses a bounded five-pose sweep with overlapping tabletop views; fully hidden, heavily occluded, or out-of-range objects can still produce an honest not-found answer.
 - Elderly mode locates objects only. It does not provide medical advice, dosage or timing guidance, diagnoses, or emergency claims; it refers those requests to a caregiver or doctor.
 
 ## What was live, staged, and experimental

@@ -11,6 +11,7 @@ import tempfile
 import time
 from array import array
 from pathlib import Path
+from types import SimpleNamespace
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -24,11 +25,18 @@ from demos.companion import (  # noqa: E402
     CompanionResult,
     CompanionSession,
     available_memory_bytes,
+    normalize_finder_target,
     preserves_target_identity,
 )
 from demos.elderly import (  # noqa: E402
+    ElderlyFinder,
+    FINDER_SETTLE_SECONDS,
+    SEARCH_POSITIONS,
+    blind_traits_support_case_target,
     candidate_match_is_confirmed,
+    create_detail_panel_crop,
     create_edge_detail_sheet,
+    detail_panel_number,
     detail_candidate_is_consistent,
     found_target_sentence,
     parse_grounded_narrated_report_found,
@@ -69,17 +77,32 @@ def _test_agent_tools_and_segmenter() -> tuple[float, float]:
 
     segmenter = VoiceSegmenter()
     muted = _pcm(100, segmenter.chunk_bytes // 2)
+    unmuted_pause = _pcm(300, segmenter.chunk_bytes // 2)
     voice = _pcm(2_000, segmenter.chunk_bytes // 2)
     now = 100.0
     starts = 0
     segment = None
-    for chunk in [muted] * 3 + [voice] * 5 + [muted] * 4:
+    # The accepted AT-CSP1 calibration puts muted input below 260 RMS and
+    # unmuted room tone above it. A natural pause must therefore remain part
+    # of one command until the physical mute floor returns.
+    sequence = (
+        [muted] * 3
+        + [voice] * 5
+        + [unmuted_pause] * 8
+        + [voice] * 5
+        + [muted] * 4
+    )
+    completed_segments = 0
+    for chunk in sequence:
         started, completed = segmenter.process(chunk, now=now)
         starts += int(started)
+        completed_segments += int(completed is not None)
         segment = completed or segment
         now += segmenter.chunk_ms / 1000
-    if starts != 1 or segment is None:
-        raise AssertionError(f"segmenter starts={starts}, completed={segment is not None}")
+    if starts != 1 or completed_segments != 1 or segment is None:
+        raise AssertionError(
+            f"segmenter starts={starts}, completed_segments={completed_segments}"
+        )
     if segment.peak_rms < 1_900:
         raise AssertionError(f"unexpected peak RMS {segment.peak_rms}")
     return segment.duration_seconds, segment.peak_rms
@@ -196,13 +219,29 @@ def _test_narrated_finder_actions() -> None:
 def _test_edge_detail_sheet() -> None:
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory) / "frame.jpg"
-        Image.new("RGB", (1280, 720), "black").save(source)
+        source_image = Image.new("RGB", (1280, 720), "black")
+        for x in range(80):
+            for y in range(80):
+                source_image.putpixel((x, y), (255, 0, 0))
+        source_image.save(source, quality=100)
         detail = Path(create_edge_detail_sheet(source))
         if not detail.is_file():
             raise AssertionError("edge-detail sheet was not created")
         with Image.open(detail) as rendered:
             if rendered.size != (1024, 576):
                 raise AssertionError(f"edge-detail sheet size was {rendered.size!r}")
+            red, green, blue = rendered.convert("RGB").getpixel((12, 12))
+            if red < 180 or green > 80 or blue > 80:
+                raise AssertionError("edge-detail sheet cropped away the physical top-left edge")
+        panel = Path(create_detail_panel_crop(detail, 1))
+        with Image.open(panel) as rendered:
+            if rendered.size != (1024, 576):
+                raise AssertionError(f"detail panel size was {rendered.size!r}")
+            red, green, blue = rendered.convert("RGB").getpixel((24, 24))
+            if red < 180 or green > 80 or blue > 80:
+                raise AssertionError("detail panel crop lost the selected physical candidate")
+        if detail_panel_number("DETECTED PANEL 3: near a laptop") != 3:
+            raise AssertionError("detail panel number was not parsed")
         previous = os.environ.get("GEMMA_EDGE_DETAIL_MAX_LONG_EDGE")
         os.environ["GEMMA_EDGE_DETAIL_MAX_LONG_EDGE"] = "512"
         try:
@@ -245,6 +284,96 @@ def _test_detail_candidate_consistency() -> None:
     for unsafe in ("MISMATCH", "MATCH or MISMATCH", "It might MATCH", "MATCH because it is white"):
         if candidate_match_is_confirmed(unsafe):
             raise AssertionError(f"strict candidate matcher accepted ambiguous prose: {unsafe!r}")
+    case_target = "small white Apple AirPods wireless-earbud charging case"
+    if not blind_traits_support_case_target(
+        case_target,
+        "White rectangular object (small, smooth, portable) in the foreground; black laptop",
+    ):
+        raise AssertionError("matching target-blind portable-case traits were rejected")
+    unsafe_case_evidence = (
+        "small white wireless mouse, smooth and oval",
+        "small white cable, cylindrical and portable",
+        "small white rectangular paper beside a QR code",
+        "small white rectangular circuit board",
+        "large white rectangular container",
+    )
+    for evidence in unsafe_case_evidence:
+        if blind_traits_support_case_target(case_target, evidence):
+            raise AssertionError(f"conflicting case evidence was accepted: {evidence!r}")
+
+
+def _test_wide_candidate_identity_gate() -> None:
+    class FakeLoop:
+        def __init__(self) -> None:
+            self.memory = SimpleNamespace(observations=[])
+            self.records: list[tuple[str, dict]] = []
+            self.responses = iter(
+                [
+                    ("DETECTED: AirPod near a table", []),
+                    (
+                        "",
+                        [
+                            {
+                                "function": {
+                                    "name": "report_found",
+                                    "arguments": {"location": "near a table"},
+                                }
+                            }
+                        ],
+                    ),
+                    ("Black circuit board; white cardboard package near the table.", []),
+                    ("MISMATCH", []),
+                    ("ABSENT", []),
+                    (
+                        "",
+                        [
+                            {
+                                "function": {
+                                    "name": "look_left",
+                                    "arguments": {},
+                                }
+                            }
+                        ],
+                    ),
+                ]
+            )
+
+        def _step(self, messages, images=None, tools=None):
+            return next(self.responses)
+
+        def log(self, action: str, **fields) -> None:
+            self.records.append((action, fields))
+
+    with tempfile.TemporaryDirectory() as directory:
+        frame = Path(directory) / "frame.jpg"
+        Image.new("RGB", (1280, 720), "white").save(frame)
+        finder = object.__new__(ElderlyFinder)
+        finder.loop = FakeLoop()
+        finder.continue_check = None
+        finder.camera_lock = None
+        decision = finder._inspect(str(frame), "center", "look_left", "AirPod")
+        if decision != ("look_left", ""):
+            raise AssertionError(f"rejected wide candidate did not continue: {decision!r}")
+        checks = [
+            fields
+            for action, fields in finder.loop.records
+            if action == "VISUAL_CANDIDATE_CHECK"
+            and fields.get("evidence_kind") == "wide-frame inspection"
+        ]
+        if len(checks) != 1 or checks[0].get("consistent") is not False:
+            raise AssertionError("wide-frame report_found bypassed identity verification")
+
+    expected = "small white Apple AirPods wireless-earbud charging case"
+    if normalize_finder_target("AirPod") != expected:
+        raise AssertionError("singular AirPod was not normalized to its visible demo target")
+    if normalize_finder_target("tissue box") != "tissue box":
+        raise AssertionError("generic finder target was unexpectedly rewritten")
+    if SEARCH_POSITIONS["center"] != (0.0, 0.0):
+        raise AssertionError("finder does not establish a level baseline before panning")
+    if SEARCH_POSITIONS["left"] != (-65.0, 0.0) or SEARCH_POSITIONS["right"] != (65.0, 0.0):
+        raise AssertionError("finder tabletop sweep no longer covers the intermediate blind wedges")
+    if FINDER_SETTLE_SECONDS < 4.0:
+        raise AssertionError("finder can capture before a long physical pan settles")
 
 
 def main() -> int:
@@ -259,6 +388,7 @@ def main() -> int:
     _test_edge_detail_sheet()
     _test_target_identity()
     _test_detail_candidate_consistency()
+    _test_wide_candidate_identity_gate()
     print(
         f"agent_tools_segmenter: PASS; tools={len(COMPANION_TOOL_SCHEMAS)}; "
         f"segment_seconds={segment_seconds:.3f}; "
@@ -270,11 +400,12 @@ def main() -> int:
         "finder_narration: PASS; expected look and final not-found accepted; "
         "premature or mismatched actions rejected"
     )
-    print("edge_detail_sheet: PASS; four overlapping edge quadrants magnified")
+    print("edge_detail_sheet: PASS; four physical corner regions preserved")
     print("target_identity: PASS; product name and object type cannot be discarded")
     print(
         "detail_consistency: PASS; deterministic conflicts and ambiguous semantic verdicts rejected"
     )
+    print("wide_identity_gate: PASS; rejected wide candidate continues the physical sweep")
     if args.unit_only:
         print("result: PASS phrase-free agent tool contract and audio segmentation")
         return 0

@@ -62,7 +62,7 @@ class VoiceSegmenter:
         chunk_ms: int = 100,
         pre_roll_ms: int = 300,
         start_rms: float = 700.0,
-        end_rms: float = 350.0,
+        end_rms: float = 260.0,
         start_windows: int = 2,
         end_silence_ms: int = 400,
         max_utterance_seconds: float = 12.0,
@@ -162,7 +162,7 @@ class ContinuousMicrophone:
         self.on_speech_start = on_speech_start
         self.segmenter = segmenter or VoiceSegmenter(
             start_rms=float(os.environ.get("GEMMA_VOICE_START_RMS", "700")),
-            end_rms=float(os.environ.get("GEMMA_VOICE_END_RMS", "350")),
+            end_rms=float(os.environ.get("GEMMA_VOICE_END_RMS", "260")),
             end_silence_ms=int(os.environ.get("GEMMA_VOICE_END_MS", "400")),
         )
         self.segments: queue.Queue[VoiceSegment] = queue.Queue()

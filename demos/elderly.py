@@ -35,11 +35,17 @@ from tools.registry import (
 
 SEARCH_ORDER = ("center", "left", "right", "up", "down")
 LOOK_FOR_DIRECTION = {direction: f"look_{direction}" for direction in SEARCH_ORDER}
+FINDER_SETTLE_SECONDS = 4.0
 SEARCH_POSITIONS = {
-    # Start on the front tabletop, where small everyday objects are normally placed.
-    "center": (0.0, -25.0),
-    "left": (-120.0, -25.0),
-    "right": (120.0, -25.0),
+    # Establish a physically settled level baseline before horizontal panning.
+    # Combining recovery from a downward tilt with a long pan left the gimbal
+    # physically low even after UVC readback had already reported level.
+    "center": (0.0, 0.0),
+    # Keep the tabletop sweep overlapping. Jumping directly from center to the
+    # physical ±120° stops left blind wedges behind close foreground objects.
+    # Explicit conversational look-left/right actions still use the full stops.
+    "left": (-65.0, 0.0),
+    "right": (65.0, 0.0),
     "up": (0.0, 25.0),
     "down": (0.0, -30.0),
 }
@@ -118,8 +124,45 @@ def candidate_match_is_confirmed(model_text: str) -> bool:
     return bool(re.fullmatch(r"\s*MATCH\s*[.!]?\s*", model_text, flags=re.IGNORECASE))
 
 
+def blind_traits_support_case_target(target: str, independent_evidence: str) -> bool:
+    """Accept one target-blind clause matching a portable case's visible traits."""
+
+    target_words = set(re.findall(r"[a-z]+", target.casefold()))
+    if "case" not in target_words:
+        return False
+    required_colors = target_words & TARGET_COLORS
+    conflicting_types = {
+        "board",
+        "book",
+        "bottle",
+        "cable",
+        "fabric",
+        "laptop",
+        "monitor",
+        "mouse",
+        "paper",
+        "speaker",
+        "surface",
+        "wire",
+    }
+    compatible_shapes = {"oval", "portable", "rectangular", "rigid", "rounded", "smooth"}
+    generic_case_types = {"case", "container", "device", "object"}
+    for clause in re.split(r"[;\n]+", independent_evidence.casefold()):
+        words = set(re.findall(r"[a-z]+", clause))
+        if required_colors and not required_colors <= words:
+            continue
+        if "small" in target_words and "small" not in words:
+            continue
+        if words & conflicting_types:
+            continue
+        if not words & compatible_shapes or not words & generic_case_types:
+            continue
+        return True
+    return False
+
+
 def create_edge_detail_sheet(image_path: str | Path) -> str:
-    """Magnify the four overlapping edge quadrants of one physical observation."""
+    """Magnify four corner regions without cropping the physical outer edges."""
 
     source_path = Path(image_path)
     output_path = source_path.with_name(f"{source_path.stem}-edge-detail.jpg")
@@ -127,8 +170,11 @@ def create_edge_detail_sheet(image_path: str | Path) -> str:
     with Image.open(source_path) as source:
         frame = source.convert("RGB")
         width, height = frame.size
-        edge_width = max(1, round(width * 0.32))
-        edge_height = max(1, round(height * 0.68))
+        # Keep the crop aspect ratio equal to the source/tile ratio. The old
+        # narrow-and-tall strips were center-cropped by ImageOps.fit, which
+        # silently removed targets clipped along the top and bottom edges.
+        edge_width = max(1, round(width * 0.45))
+        edge_height = max(1, round(height * 0.45))
         boxes = (
             (0, 0, edge_width, edge_height),
             (width - edge_width, 0, width, edge_height),
@@ -153,6 +199,46 @@ def create_edge_detail_sheet(image_path: str | Path) -> str:
             sheet.save(temporary_path, format="JPEG", quality=92)
             if temporary_path.stat().st_size < 1024:
                 raise OSError("generated edge-detail JPEG is unexpectedly small")
+            temporary_path.replace(output_path)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
+    return str(output_path)
+
+
+def detail_panel_number(model_text: str) -> int | None:
+    """Extract a one-based candidate panel selected by the visual classifier."""
+
+    match = re.search(r"\bPANEL\s*([1-4])\b", model_text, flags=re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def create_detail_panel_crop(image_path: str | Path, panel: int) -> str:
+    """Enlarge one 2x2 detail-sheet panel for independent identity review."""
+
+    if panel not in {1, 2, 3, 4}:
+        raise ValueError("detail panel must be between 1 and 4")
+    source_path = Path(image_path)
+    output_path = source_path.with_name(f"{source_path.stem}-panel-{panel}.jpg")
+    temporary_path = output_path.with_name(f"{output_path.stem}.tmp.jpg")
+    with Image.open(source_path) as source:
+        sheet = source.convert("RGB")
+        width, height = sheet.size
+        tile_width = width // 2
+        tile_height = height // 2
+        column = (panel - 1) % 2
+        row = (panel - 1) // 2
+        box = (
+            column * tile_width,
+            row * tile_height,
+            (column + 1) * tile_width,
+            (row + 1) * tile_height,
+        )
+        enlarged = sheet.crop(box).resize(sheet.size, Image.Resampling.LANCZOS)
+        try:
+            enlarged.save(temporary_path, format="JPEG", quality=92)
+            if temporary_path.stat().st_size < 1024:
+                raise OSError("generated detail-panel JPEG is unexpectedly small")
             temporary_path.replace(output_path)
         finally:
             if temporary_path.exists():
@@ -328,7 +414,10 @@ class ElderlyFinder:
         guard = self.camera_lock if self.camera_lock is not None else nullcontext()
         with guard:
             position = look_at(pan, tilt)
-            time.sleep(0.8)
+            # UVC readback reaches its requested value before the OBSBOT motor
+            # completes a long pan. The calibrated delay covers the largest
+            # finder transition and prevents capturing an in-flight pose.
+            time.sleep(FINDER_SETTLE_SECONDS)
         self.loop.log(
             "LOOK" if issued_by_gemma else "SEARCH_START_MOVE",
             tool=LOOK_FOR_DIRECTION[direction],
@@ -597,10 +686,14 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
                 {
                     "role": "user",
                     "content": (
-                        "In one semicolon-separated line of at most 50 words, list every distinct "
-                        "small physical object you can actually see. Include observed color, "
-                        "shape, object type, nearby anchor, and uncertainty. If no small object "
-                        "is clear, reply exactly NO_CANDIDATE."
+                        "Inspect the entire attached view, including its outer edges. Report up to "
+                        "six distinct small rigid or portable objects in one plain semicolon-separated "
+                        "line of at most 70 words total. Include observed "
+                        "relative size, color, shape, physical type, nearby anchor, and uncertainty. "
+                        "For a case or container, state only visible construction details such as a "
+                        "lid seam, hinge, button, port, or marking; never infer one. Do not skip a "
+                        "plain case in favor of busier electronics. If none is clear, reply exactly "
+                        "NO_CANDIDATE."
                     ),
                 },
             ],
@@ -617,12 +710,17 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
                     {
                         "role": "system",
                         "content": (
-                            "You are a strict evidence auditor. Decide whether a target-blind "
-                            "observation explicitly and unambiguously supports the requested "
-                            "object's physical category. Similar color or shape is insufficient. "
-                            "Uncertainty, an alternative object type, a generic object, or a "
-                            "missing product category requires MISMATCH. Reply exactly MATCH or "
-                            "MISMATCH."
+                            "You are a strict evidence auditor. A separate target-aware detector has "
+                            "already proposed the requested identity. Inspect the attached pixels "
+                            "yourself and cross-check the target-blind observation. Exact brand or "
+                            "product-category wording is not required. MATCH requires a directly "
+                            "visible candidate with compatible relative size, color, shape, and "
+                            "physical construction, and no conflicting concrete object type in the "
+                            "blind evidence. Color or shape alone is insufficient. A generic object "
+                            "or container may match only when that full trait conjunction aligns. A "
+                            "named alternative such as mouse, cable, paper, circuit board, book, "
+                            "bottle, fabric, surface, or a conflicting large object requires MISMATCH. "
+                            "Reply exactly MATCH or MISMATCH."
                         ),
                     },
                     {
@@ -632,10 +730,14 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
                             f"Target-blind observation: {independent_evidence}"
                         ),
                     },
-                ]
+                ],
+                [image_path],
             )
             self._checkpoint()
-        consistent = deterministic_consistency and candidate_match_is_confirmed(match_text)
+        trait_consistency = blind_traits_support_case_target(target, independent_evidence)
+        consistent = deterministic_consistency and (
+            candidate_match_is_confirmed(match_text) or trait_consistency
+        )
         self.loop.log(
             "VISUAL_CANDIDATE_CHECK",
             direction=direction,
@@ -645,6 +747,7 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
             independent_evidence=independent_evidence,
             deterministic_consistency=deterministic_consistency,
             matcher_evidence=match_text,
+            trait_consistency=trait_consistency,
             consistent=consistent,
         )
         return consistent
@@ -696,7 +799,18 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
             evidence_kind="wide-frame inspection",
         )
         if wide_decision[0] == "report_found":
-            return wide_decision
+            if self._verify_candidate_identity(
+                image_path=image_path,
+                direction=direction,
+                target=target,
+                target_aware_evidence=visual_evidence,
+                evidence_kind="wide-frame inspection",
+            ):
+                return wide_decision
+            # A target-aware classifier can occasionally map a vaguely similar
+            # tabletop object to the requested identity. Treat an independently
+            # rejected candidate as a miss and continue the bounded sweep.
+            wide_decision = (next_tool or "report_not_found", "")
 
         try:
             detail_path = create_edge_detail_sheet(image_path)
@@ -714,7 +828,8 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
             source_image=image_path,
             detail_image=detail_path,
         )
-        detail_prompt = f"""Target: a {target}. Answer exactly DETECTED: followed by its physical location near a table or laptop, or ABSENT if no matching target is visible. A partially clipped target counts."""
+        detail_prompt = f"""The image is a 2-by-2 sheet whose panels are numbered 1 top-left, 2 top-right, 3 bottom-left, and 4 bottom-right.
+Target: a {target}. If visible, answer exactly DETECTED PANEL N: followed by its physical location near a table or laptop, where N is 1, 2, 3, or 4. Otherwise answer exactly ABSENT. A partially clipped target counts."""
         detail_evidence, _ = self.loop._step(
             [
                 {"role": "system", "content": VISUAL_CLASSIFIER_PROMPT},
@@ -731,9 +846,31 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
             detail_image=detail_path,
             text=detail_evidence,
         )
-        if detail_evidence.upper().startswith("DETECTED:"):
+        if detail_evidence.upper().startswith("DETECTED"):
+            candidate_image = detail_path
+            panel = detail_panel_number(detail_evidence)
+            if panel is not None:
+                try:
+                    candidate_image = create_detail_panel_crop(detail_path, panel)
+                    self.loop.log(
+                        "DETAIL_PANEL_CROP",
+                        direction=direction,
+                        target=target,
+                        panel=panel,
+                        source_image=detail_path,
+                        candidate_image=candidate_image,
+                    )
+                except OSError as exc:
+                    self.loop.log(
+                        "DETAIL_PANEL_FALLBACK",
+                        direction=direction,
+                        target=target,
+                        panel=panel,
+                        source_image=detail_path,
+                        error=str(exc),
+                    )
             if not self._verify_candidate_identity(
-                image_path=detail_path,
+                image_path=candidate_image,
                 direction=direction,
                 target=target,
                 target_aware_evidence=detail_evidence,
@@ -760,6 +897,7 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
         request: str = "Please find my glasses",
         *,
         target: str = "wearable eyeglasses",
+        spoken_target: str | None = None,
     ) -> FinderResult:
         if self.speech:
             prerender(FIXED_PHRASES)
@@ -771,10 +909,11 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
 
         started = time.monotonic()
         self._checkpoint()
+        speech_target = spoken_target or target
         confirmation = (
             GLASSES_CONFIRMATION
-            if target.casefold() in {"glasses", "wearable eyeglasses"}
-            else f"You want me to find the {target}, is that right?"
+            if speech_target.casefold() in {"glasses", "wearable eyeglasses"}
+            else f"You want me to find the {speech_target}, is that right?"
         )
         self._say(confirmation)
         self._say(ONE_MOMENT)
@@ -804,7 +943,7 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
             if action == "report_found":
                 if not location:
                     raise AgentLoopError("Gemma reported the target without a location")
-                spoken = found_target_sentence(target, location)
+                spoken = found_target_sentence(speech_target, location)
                 self._say(spoken)
                 duration = time.monotonic() - started
                 self.loop.log(
@@ -829,7 +968,7 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
                 spoken = (
                     ELDERLY_NOT_FOUND
                     if target.casefold() == "red umbrella"
-                    else f"I couldn't find the {target} from here. Please check its usual place."
+                    else f"I couldn't find the {speech_target} from here. Please check its usual place."
                 )
                 self._say(spoken)
                 duration = time.monotonic() - started

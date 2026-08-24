@@ -66,7 +66,7 @@ Initial defaults:
 - 16 kHz, 16-bit mono, 100 ms processing windows
 - 300 ms in-memory pre-roll
 - speech onset: two consecutive windows at or above 700 RMS
-- utterance end: four consecutive windows at or below 350 RMS
+- utterance end: four consecutive windows at or below 260 RMS; unmuted pauses remain above this measured mute-only boundary
 - maximum utterance: 12 seconds
 
 All thresholds are environment-overridable and must be tuned only through the physical verifier, not by saving ambient audio.
