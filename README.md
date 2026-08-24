@@ -56,31 +56,98 @@ Every action and latency ──► logs/session-*.jsonl
 
 Video is never streamed into the model. A session starts with bounded observations, keeps a compact directional inventory, allows at most 8 tool calls and 12 questions, and captures another still only when needed.
 
-## Hardware and tested platform
+## Supported hardware
 
-- NVIDIA Jetson Orin Nano Super 8 GB, aarch64, L4T R39.2.1 / Ubuntu 24.04
-- Transcend 500 GB NVMe root disk
-- OBSBOT Tiny SE camera/gimbal on `/dev/video0`
-- Audio-Technica AT-CSP1 microphone/speaker on ALSA `plughw:3,0`
-- Python 3.12, GStreamer, ALSA tools, Pillow
+The released configuration is intentionally hardware-specific:
 
-See [`docs/recon.md`](docs/recon.md) for the exact discovery output and [`docs/memory-budget.md`](docs/memory-budget.md) for measured memory.
+- NVIDIA Jetson Orin Nano Super 8 GB, aarch64, JetPack 6 / Ubuntu 24.04
+- OBSBOT Tiny SE camera/gimbal with UVC absolute pan and tilt
+- Audio-Technica AT-CSP1 USB microphone/speaker
+- An NVMe system disk with room for several gigabytes of local runtime and model assets
 
-## One-time setup on the Jetson
+The accepted machine used L4T R39.2.1, Python 3.12, a 500 GB Transcend NVMe, OBSBOT capture on `/dev/video0`, and the AT-CSP1 ALSA alias `Device`. Other Linux computers, JetPack releases, cameras, and audio devices are not yet verified. See [`docs/recon.md`](docs/recon.md) for the exact accepted inventory and [`docs/memory-budget.md`](docs/memory-budget.md) for measured memory.
 
-Clone into the tested path and bootstrap without installing weights into git:
+## Install on a fresh Jetson
+
+Setup needs internet access once. Normal use is fully offline.
+
+### 1. Install operating-system prerequisites
+
+Start from a working JetPack 6 image with CUDA userspace already present, then install the small host-side dependencies:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  alsa-utils ca-certificates curl espeak-ng git \
+  gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools \
+  python3 python3-pip python3-venv usbutils zstd
+```
+
+Do not run `apt upgrade` as part of this project setup. JetPack, CUDA, and kernel upgrades should be handled as a separate system-administration task.
+
+### 2. Clone and connect the hardware
+
+Use a clone path without spaces. Connect both USB devices before running reconnaissance:
 
 ```bash
 git clone https://github.com/ilhamfp/GemmaCompanion.git ~/gemma-companion
 cd ~/gemma-companion
+./scripts/recon.sh
+```
+
+`recon.sh` exits nonzero unless it can identify CUDA, an OBSBOT capture node, UVC pan/tilt controls, and AT-CSP1 capture/playback. It writes the full inventory to `docs/recon.md`. If your OBSBOT capture node is not `/dev/video0`, note the selected node for the configuration step below.
+
+### 3. Download the pinned local runtime and models
+
+```bash
 ./scripts/bootstrap_runtime.sh
 ./scripts/bootstrap_tts.sh
 make runtime
 ```
 
-The runtime bootstrap downloads pinned, checksum-verified official Ollama ARM64 and JetPack 6 archives, pulls `gemma4:e2b-it-qat`, downloads the official whisper.cpp b4938 ARM64 runtime and `tiny.en` model, and unpacks Ubuntu's eSpeak NG package without sudo. The TTS bootstrap creates the gitignored `.venv`, installs the pinned CPU-only Kokoro ONNX stack, and downloads checksum-verified `kokoro-v1.0.onnx` and `voices-v1.0.bin` into `models/`. It needs internet only once. The downloaded `.runtime/`, `.venv/`, and `models/` trees are ignored by git. If Jetson DNS is unavailable, run the downloads on another machine and copy the resulting runtime/model assets to the same repo paths.
+The first script downloads checksum-pinned Ollama 0.32.15 ARM64 and JetPack 6 runtime archives, pulls `gemma4:e2b-it-qat`, and installs the pinned whisper.cpp b4938 runtime plus `tiny.en`. The second creates `.venv`, installs the pinned CPU-only Kokoro ONNX stack, and downloads the Kokoro model and voice data. All generated assets live under `.runtime/`, `.venv/`, `models/`, `captures/`, `artifacts/`, or `logs/`; all are gitignored and model weights are never committed.
 
-The base image must already provide GStreamer, ALSA `arecord`/`aplay`, Python, the JetPack CUDA userspace, and eSpeak's shared-library dependencies. Kokoro stays resident on CPU and uses the selected `af_heart` voice at speed 1.08; eSpeak NG remains installed for phonemization and emergency runtime fallback. Run `./scripts/recon.sh` to verify the expected devices before a demo. Environment overrides are available for `GEMMA_CAMERA_DEVICE`, `GEMMA_AUDIO_CAPTURE_DEVICE`, and `GEMMA_AUDIO_PLAYBACK_DEVICE`.
+If DNS is unavailable on the Jetson, run the bootstrap on another compatible aarch64 JetPack 6 system and copy those generated directories into the same paths. Runtime and model assets retain their upstream licenses.
+
+### 4. Verify each hardware layer
+
+Run these before installing the boot service. The PTZ and companion checks physically move the OBSBOT, while audio and TTS checks use the speaker:
+
+```bash
+./scripts/test_camera.py
+./scripts/test_ptz.py
+./scripts/test_audio.py --text
+./scripts/test_gemma.py
+./scripts/test_tts.py
+./scripts/test_companion.py
+```
+
+For the real microphone check, run `./scripts/test_audio.py` without `--text` and repeat the prompted sentence. Every verifier exits nonzero on failure and prints its accepted frame, device, latency, and/or memory evidence.
+
+### 5. Run once in the foreground
+
+Keep the AT-CSP1 microphone physically muted, then run:
+
+```bash
+make companion
+```
+
+Wait for `Hi, I'm Gemma!`. Unmute, speak one request, then mute again to close the utterance. Press `Ctrl-C` to stop the foreground session. Only one companion may own the camera and audio stream at once.
+
+### 6. Enable automatic startup
+
+After the foreground run succeeds, install the system service once:
+
+```bash
+sudo ./scripts/install_boot_service.sh
+./scripts/test_boot_service.sh
+```
+
+The installer detects the account that invoked `sudo` and the current clone path, renders those into the unit, enables it, and starts it immediately. If the repository is owned by a different account, use `sudo env GEMMA_SERVICE_USER=<account> ./scripts/install_boot_service.sh`. The service waits up to two minutes for both USB devices, starts Gemma and Whisper locally, centers the camera, inspects one fresh frame, and then says `Hi, I'm Gemma!`.
+
+To inspect the rendered unit without changing the system, run `./scripts/install_boot_service.sh --dry-run`.
+
+After this one-time installation, attach the OBSBOT and AT-CSP1 before applying power. No Mac, login, Wi-Fi, display, or terminal is required after the greeting. See [`docs/LIVE_COMPANION.md`](docs/LIVE_COMPANION.md) for the physical button workflow and [`docs/DEMO_FLOW.md`](docs/DEMO_FLOW.md) for the rehearsed presentation.
 
 ## Run the demos
 
@@ -137,6 +204,63 @@ make demo-elderly DEMO_ARGS="--request 'Please find my glasses' --target 'wearab
 ```
 
 For keyboard request entry, add `--text`. Both paths use the same finder, spoken confirmation, physical camera tools, and result.
+
+## Configuration
+
+The tested defaults require no configuration. For a different detected device node or preferred voice, export variables before `make companion`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GEMMA_CAMERA_DEVICE` | `/dev/video0` | OBSBOT V4L2 capture/control node |
+| `GEMMA_AUDIO_CAPTURE_DEVICE` | `plughw:CARD=Device,DEV=0` | ALSA microphone device |
+| `GEMMA_AUDIO_PLAYBACK_DEVICE` | `plughw:CARD=Device,DEV=0` | ALSA speaker device |
+| `GEMMA_AUDIO_CARD` | `Device` | ALSA mixer card used by volume control |
+| `GEMMA_PLAYBACK_VOLUME` | `100` | Startup hardware volume, 0–100 |
+| `GEMMA_TTS_VOICE` | `af_heart` | Kokoro voice name |
+| `GEMMA_TTS_SPEED` | `1.08` | Base speech speed, 0.5–2.0 |
+| `GEMMA_TTS_THREADS` | `6` | CPU threads reserved for Kokoro |
+| `GEMMA_VOICE_START_RMS` | `700` | Calibrated voice-onset threshold |
+| `GEMMA_VOICE_END_RMS` | `350` | Calibrated mute/silence threshold |
+
+For the system service, put overrides in `/etc/default/gemma-companion` using systemd environment-file syntax, then restart:
+
+```ini
+GEMMA_CAMERA_DEVICE=/dev/video2
+GEMMA_PLAYBACK_VOLUME=90
+```
+
+```bash
+sudo systemctl restart gemma-companion.service
+```
+
+Do not set `GEMMA_SPEECH_MODE=direct` for the boot service on an 8 GB Jetson. Native Gemma audio is an isolated experiment described below, not the reliable vision configuration.
+
+## Updating an installed companion
+
+```bash
+cd ~/gemma-companion
+git pull --ff-only origin main
+./scripts/bootstrap_runtime.sh
+./scripts/bootstrap_tts.sh
+sudo ./scripts/install_boot_service.sh
+./scripts/test_boot_service.sh
+```
+
+The bootstraps are idempotent and checksum existing downloads. Re-running the installer refreshes the unit if the clone path or service definition changed.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| `another Gemma Companion session is already running` | The boot service already owns the hardware. Use it, or run `sudo systemctl stop gemma-companion.service` before a foreground session. |
+| No greeting after four minutes | Run `systemctl --no-pager --full status gemma-companion.service`, then `journalctl -u gemma-companion.service -n 100 --no-pager`. |
+| Camera capture fails | Run `./scripts/recon.sh`, inspect `/dev/video*`, and set `GEMMA_CAMERA_DEVICE` to the selected capture node. |
+| Microphone or playback fails | Compare `arecord -l` and `aplay -l` with the ALSA variables above; keep the AT-CSP1 connected before boot. |
+| Gemma or Whisper does not start | Inspect `logs/gemma-server.log` and `logs/whisper-server.log`; rerun the corresponding bootstrap if an asset is missing. |
+| Responses stop under load | Check `free -h`. The loop deliberately refuses inference below 500 MiB available; stop unrelated memory-heavy processes. |
+| Finder is uncertain | Keep the target fully visible with useful contrast. The bounded sweep prefers an honest not-found result over inventing a location. |
+
+To reset the camera without deleting logs or captures, run `make reset`. For a clean shutdown, use Ubuntu's power menu or `sudo poweroff` and wait for shutdown before disconnecting power.
 
 ## Privacy, safety, and reliability
 

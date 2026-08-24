@@ -10,6 +10,7 @@ Group=iputra
 SupplementaryGroups=audio video
 WorkingDirectory=/home/iputra/gemma-companion
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/gemma-companion
 ExecStart=/home/iputra/gemma-companion/scripts/run_companion.sh
 Restart=on-failure
 RestartSec=3

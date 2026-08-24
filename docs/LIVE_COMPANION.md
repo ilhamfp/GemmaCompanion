@@ -2,14 +2,16 @@
 
 ## One-time setup
 
-The code and model assets must already be present in `/home/iputra/gemma-companion`. Install the system boot service once from a Jetson terminal or the current SSH session:
+The code and model assets must already be present in a clone path without spaces. Install the system boot service once from a Jetson terminal or the current SSH session:
 
 ```bash
 cd ~/gemma-companion
 sudo ./scripts/install_boot_service.sh
 ```
 
-Type the Jetson account password directly into that terminal. The installer copies only `deploy/gemma-companion.service`, reloads systemd, enables the unit for future boots, and starts it immediately.
+Type the Jetson account password directly into that terminal. The installer renders and installs only `deploy/gemma-companion.service`, reloads systemd, enables the unit for future boots, and starts it immediately.
+
+The installer renders the invoking account and current repository path into the installed unit. If the repository belongs to another account, run `sudo env GEMMA_SERVICE_USER=<account> ./scripts/install_boot_service.sh`. Optional hardware overrides can be placed in `/etc/default/gemma-companion` before restarting the service. `./scripts/install_boot_service.sh --dry-run` previews the rendered unit without root access or system changes.
 
 Verify the installed service:
 
