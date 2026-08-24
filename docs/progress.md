@@ -918,3 +918,35 @@ result: PASS publishable setup guide, portable service installer, live boot, and
 ```
 
 The push was a normal fast-forward from public `33ffe4a` to publication commit `71c2bad`; no force push was used. A final documentation-only evidence commit follows it on `main`.
+
+## M20 Self-service remote restart
+
+### MAC + JETSON — restricted passwordless restart and fresh-session gate
+
+The boot installer now renders and validates a sudoers rule granting the service account only
+`/usr/bin/systemctl restart gemma-companion.service`. SSH remains key-only and unrelated root
+commands remain password-protected. `make restart` records the old PID, performs the exact
+allowed operation non-interactively, requires a different live PID, discovers the installed
+repository from systemd, and runs the boot verifier against only logs created after the restart.
+
+A deliberate future-epoch test proved stale sessions cannot pass:
+
+```text
+stale_log_test_exit=1
+ERROR: companion did not publish its grounded readiness cue within 1 seconds
+invalid_epoch_test_exit=2
+ERROR: GEMMA_BOOT_AFTER_EPOCH must be a non-negative integer
+```
+
+The final real command was `make restart` on the Mac. It required no password, exited 0, and
+produced this five-line Jetson readiness gate:
+
+```text
+service_enabled: PASS; unit=gemma-companion.service
+service_active: PASS; main_pid=62039
+local_models: PASS; gemma_http=200; whisper_http=200
+continuous_session: PASS; grounded_readiness=yes; log=/home/iputra/gemma-companion/logs/companion-20260824-095315-559938.jsonl
+result: PASS boot service owns a ready offline companion session
+```
+
+Implementation commit: `524652f`.

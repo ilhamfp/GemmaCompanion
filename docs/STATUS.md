@@ -266,3 +266,17 @@ evidence: |
 fallback_taken: none
 commit: 71c2bad
 notes: README now takes a new JetPack 6 owner from apt prerequisites through hardware reconnaissance, pinned runtime/model bootstrap, layered verification, foreground use, automatic boot, environment overrides, updates, and troubleshooting. The installer no longer assumes the `iputra` account or `/home/iputra/gemma-companion`; it renders the invoking user, primary group, and clone path, offers a non-mutating dry run, accepts an explicit service user, and loads optional `/etc/default/gemma-companion` overrides. Real-user and alternate-user renders passed on the Jetson, documented packages resolve, every local README link exists, the unit passes `systemd-analyze verify`, and the first public push fast-forwarded `origin/main` from 33ffe4a to 71c2bad.
+
+## M20 Self-service remote restart
+status: DONE
+verified_by: make restart
+verified_at: 2026-08-24 09:53 SGT
+evidence: |
+  service_enabled: PASS; unit=gemma-companion.service
+  service_active: PASS; main_pid=62039
+  local_models: PASS; gemma_http=200; whisper_http=200
+  continuous_session: PASS; grounded_readiness=yes; log=/home/iputra/gemma-companion/logs/companion-20260824-095315-559938.jsonl
+  result: PASS boot service owns a ready offline companion session
+fallback_taken: none
+commit: 524652f
+notes: The Mac now uses SSH key authentication plus a sudoers rule restricted to `/usr/bin/systemctl restart gemma-companion.service`; unrelated privileged systemctl commands remain password-protected. The first live test exposed a stale-log race because shutdown updated the previous log's modification time. The verifier now gates on log creation time (or the COMPANION_START timestamp on filesystems without birth time). A future-epoch test rejected stale logs with exit 1 before the final passwordless restart changed PID 61394 to 62039 and credited only the newly created ready-session log.
