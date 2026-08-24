@@ -251,4 +251,18 @@ evidence: |
   result: PASS live AirPods detection and complete honest physical sweep
 fallback_taken: none
 commit: 06eadd3
-notes: The live service exposed an actual false positive: a magnified edge crop labeled a white cable or plastic fragment as AirPods, while its target-blind description did not support that identity. Edge-only detections now require a compact target-blind inventory plus an exact semantic identity verdict; contextual full-frame detections remain usable. The exact false-positive frame was rejected 3/3, a known genuine AirPods frame was accepted 3/3, and the live sweep rejected the cable at center before Gemma moved and found the real case. The phrase-free agent, compound vision, demo flow, arbitrary visible-reference routing, and five unfamiliar open-chat questions also passed. This commit was synced only to the Jetson and was not pushed to GitHub, as requested; the installed service still needs a human-authorized restart to load it.
+notes: The live service exposed an actual false positive: a magnified edge crop labeled a white cable or plastic fragment as AirPods, while its target-blind description did not support that identity. Edge-only detections now require a compact target-blind inventory plus an exact semantic identity verdict; contextual full-frame detections remain usable. The exact false-positive frame was rejected 3/3, a known genuine AirPods frame was accepted 3/3, and the live sweep rejected the cable at center before Gemma moved and found the real case. The phrase-free agent, compound vision, demo flow, arbitrary visible-reference routing, and five unfamiliar open-chat questions also passed. The service was subsequently restarted and the grounded boot verifier passed with PID 59909. The earlier no-push constraint was later superseded by the human's explicit request to publish `main`.
+
+## M19 Public setup and portable boot service
+status: DONE
+verified_by: scripts/install_boot_service.sh --dry-run + scripts/test_boot_service.sh + git ls-remote
+verified_at: 2026-08-24 09:43 SGT
+evidence: |
+  installer_render: PASS; user=iputra; group=iputra; repo=/home/iputra/gemma-companion; environment_file=/etc/default/gemma-companion
+  repository_validation: PASS; readme_local_links=all; shellcheck=clean; systemd_unit=valid
+  boot_service: PASS; main_pid=59909; gemma_http=200; whisper_http=200; grounded_readiness=yes
+  remote_main: PASS; sha=71c2bade96569c77a98289fe3eeda0774123801a; branch=main
+  result: PASS publishable setup guide, portable service installer, live boot, and remote main
+fallback_taken: none
+commit: 71c2bad
+notes: README now takes a new JetPack 6 owner from apt prerequisites through hardware reconnaissance, pinned runtime/model bootstrap, layered verification, foreground use, automatic boot, environment overrides, updates, and troubleshooting. The installer no longer assumes the `iputra` account or `/home/iputra/gemma-companion`; it renders the invoking user, primary group, and clone path, offers a non-mutating dry run, accepts an explicit service user, and loads optional `/etc/default/gemma-companion` overrides. Real-user and alternate-user renders passed on the Jetson, documented packages resolve, every local README link exists, the unit passes `systemd-analyze verify`, and the first public push fast-forwarded `origin/main` from 33ffe4a to 71c2bad.

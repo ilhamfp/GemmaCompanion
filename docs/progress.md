@@ -898,3 +898,23 @@ result: PASS live AirPods detection and complete honest physical sweep
 ```
 
 The phrase-free companion regression reported 1.950-second maximum model-selected PTZ latency and 4.283-second fresh vision with 2179.5 MiB available. Thirteen unfamiliar tool paraphrases, compound move-plus-inspect, arbitrary visible-reference routing, the five-beat demo router, and five unfamiliar open-chat questions all passed. Implementation commit: `06eadd3`. No GitHub push was performed.
+
+## M19 Public setup and portable boot service
+
+### MAC + JETSON — publication audit and remote push
+
+The public setup path was audited against the actual bootstrap scripts, camera and audio implementations, service unit, environment variables, and verifier preconditions. README now documents Ubuntu prerequisites, connected-device reconnaissance, pinned runtime and model downloads, ordered hardware verification, foreground operation, headless boot installation, persistent overrides, safe updates, and common recovery paths.
+
+The systemd installer previously copied a unit hard-coded to `iputra` and `/home/iputra/gemma-companion`. It now renders the invoking non-root account, primary group, and current clone path, rejects whitespace paths, accepts `GEMMA_SERVICE_USER` when ownership differs, exposes a read-only `--dry-run`, and loads optional variables from `/etc/default/gemma-companion`. ShellCheck passed. On the Jetson, both the real `iputra` render and an alternate `nobody:nogroup` render replaced the checked-in defaults correctly; invalid arguments and non-root mutation were rejected.
+
+The final five-line publication gate was:
+
+```text
+installer_render: PASS; user=iputra; group=iputra; repo=/home/iputra/gemma-companion; environment_file=/etc/default/gemma-companion
+repository_validation: PASS; readme_local_links=all; shellcheck=clean; systemd_unit=valid
+boot_service: PASS; main_pid=59909; gemma_http=200; whisper_http=200; grounded_readiness=yes
+remote_main: PASS; sha=71c2bade96569c77a98289fe3eeda0774123801a; branch=main
+result: PASS publishable setup guide, portable service installer, live boot, and remote main
+```
+
+The push was a normal fast-forward from public `33ffe4a` to publication commit `71c2bad`; no force push was used. A final documentation-only evidence commit follows it on `main`.
