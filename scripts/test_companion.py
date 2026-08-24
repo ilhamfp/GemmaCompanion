@@ -26,6 +26,7 @@ from demos.companion import (  # noqa: E402
     preserves_target_identity,
 )
 from demos.elderly import (  # noqa: E402
+    candidate_match_is_confirmed,
     create_edge_detail_sheet,
     detail_candidate_is_consistent,
     parse_narrated_look_action,
@@ -193,6 +194,11 @@ def _test_detail_candidate_consistency() -> None:
         raise AssertionError("conflicting independent color evidence was accepted")
     if detail_candidate_is_consistent("smartphone", "NO_CANDIDATE"):
         raise AssertionError("detail search accepted an independent no-candidate result")
+    if not candidate_match_is_confirmed("MATCH."):
+        raise AssertionError("strict candidate matcher rejected its affirmative token")
+    for unsafe in ("MISMATCH", "MATCH or MISMATCH", "It might MATCH", "MATCH because it is white"):
+        if candidate_match_is_confirmed(unsafe):
+            raise AssertionError(f"strict candidate matcher accepted ambiguous prose: {unsafe!r}")
 
 
 def main() -> int:
@@ -220,7 +226,9 @@ def main() -> int:
     )
     print("edge_detail_sheet: PASS; four overlapping edge quadrants magnified")
     print("target_identity: PASS; product name and object type cannot be discarded")
-    print("detail_consistency: PASS; independent evidence rejects color conflicts")
+    print(
+        "detail_consistency: PASS; deterministic conflicts and ambiguous semantic verdicts rejected"
+    )
     if args.unit_only:
         print("result: PASS phrase-free agent tool contract and audio segmentation")
         return 0

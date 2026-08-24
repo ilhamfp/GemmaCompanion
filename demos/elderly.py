@@ -85,14 +85,21 @@ def medical_refusal() -> str:
 
 
 def detail_candidate_is_consistent(target: str, independent_evidence: str) -> bool:
-    """Require a target-blind detail observation to preserve explicit color evidence."""
+    """Apply deterministic rejection gates before semantic identity verification."""
 
-    if "NO_CANDIDATE" in independent_evidence.upper():
+    normalized = independent_evidence.upper()
+    if "NO_CANDIDATE" in normalized or "NO OBJECT" in normalized:
         return False
     target_words = set(re.findall(r"[a-z]+", target.casefold()))
     evidence_words = set(re.findall(r"[a-z]+", independent_evidence.casefold()))
     required_colors = target_words & TARGET_COLORS
     return not required_colors or bool(required_colors & evidence_words)
+
+
+def candidate_match_is_confirmed(model_text: str) -> bool:
+    """Accept only the verifier's exact affirmative token."""
+
+    return bool(re.fullmatch(r"\s*MATCH\s*[.!]?\s*", model_text, flags=re.IGNORECASE))
 
 
 def create_edge_detail_sheet(image_path: str | Path) -> str:
@@ -482,6 +489,81 @@ Call exactly one supplied tool. Do not narrate, repeat a direction, or use markd
             f"retry={retry_text!r}"
         )
 
+    def _verify_candidate_identity(
+        self,
+        *,
+        image_path: str,
+        direction: str,
+        target: str,
+        target_aware_evidence: str,
+        evidence_kind: str,
+    ) -> bool:
+        """Cross-check a detection using target-blind pixels and strict text matching."""
+
+        independent_evidence, _ = self.loop._step(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a target-blind visual observer. Inspect only the attached "
+                        "pixels. Do not guess brands or identities."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "In one semicolon-separated line of at most 50 words, list every distinct "
+                        "small physical object you can actually see. Include observed color, "
+                        "shape, object type, nearby anchor, and uncertainty. If no small object "
+                        "is clear, reply exactly NO_CANDIDATE."
+                    ),
+                },
+            ],
+            [image_path],
+        )
+        self._checkpoint()
+        deterministic_consistency = detail_candidate_is_consistent(
+            target, independent_evidence
+        )
+        match_text = "MISMATCH"
+        if deterministic_consistency:
+            match_text, _ = self.loop._step(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a strict evidence auditor. Decide whether a target-blind "
+                            "observation explicitly and unambiguously supports the requested "
+                            "object's physical category. Similar color or shape is insufficient. "
+                            "Uncertainty, an alternative object type, a generic object, or a "
+                            "missing product category requires MISMATCH. Reply exactly MATCH or "
+                            "MISMATCH."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Requested object: {target}\n"
+                            f"Target-blind observation: {independent_evidence}"
+                        ),
+                    },
+                ]
+            )
+            self._checkpoint()
+        consistent = deterministic_consistency and candidate_match_is_confirmed(match_text)
+        self.loop.log(
+            "VISUAL_CANDIDATE_CHECK",
+            direction=direction,
+            target=target,
+            evidence_kind=evidence_kind,
+            target_aware_evidence=target_aware_evidence,
+            independent_evidence=independent_evidence,
+            deterministic_consistency=deterministic_consistency,
+            matcher_evidence=match_text,
+            consistent=consistent,
+        )
+        return consistent
+
     def _inspect(
         self,
         image_path: str,
@@ -565,38 +647,13 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
             text=detail_evidence,
         )
         if detail_evidence.upper().startswith("DETECTED:"):
-            independent_evidence, _ = self.loop._step(
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a visual verifier. Inspect the attached pixels now. Report "
-                            "only directly visible physical traits and never repeat a prior label."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "Without being told the search target, describe the most prominent "
-                            "small object visible near the table or laptop. State its observed "
-                            "color, shape, and object type. If no small object is clearly visible, "
-                            "reply NO_CANDIDATE."
-                        ),
-                    },
-                ],
-                [detail_path],
-            )
-            self._checkpoint()
-            consistent = detail_candidate_is_consistent(target, independent_evidence)
-            self.loop.log(
-                "EDGE_DETAIL_INDEPENDENT_CHECK",
+            if not self._verify_candidate_identity(
+                image_path=detail_path,
                 direction=direction,
                 target=target,
                 target_aware_evidence=detail_evidence,
-                independent_evidence=independent_evidence,
-                consistent=consistent,
-            )
-            if not consistent:
+                evidence_kind="magnified edge-detail inspection",
+            ):
                 return wide_decision
         detail_decision = self._decide_from_evidence(
             visual_evidence=detail_evidence,
