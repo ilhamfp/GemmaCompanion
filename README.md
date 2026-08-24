@@ -145,6 +145,7 @@ For keyboard request entry, add `--text`. Both paths use the same finder, spoken
 - PTZ commands are absolute and bounded to ±120° pan (inside the queried ±130° hardware stop) and ±30° tilt.
 - The elderly mode locates objects only. It does not provide medical advice, medication dosage/timing, diagnosis, or emergency claims; it directs those questions to a caregiver or doctor.
 - A not-found result is valid. The agent never invents a location when visual evidence is missing.
+- Full contextual frames may ground a find directly. A magnified edge crop may only override a full-frame miss after a separate target-blind inventory and strict identity check agree, preventing cables or similarly colored fragments from becoming false finds.
 - Every inference checks the 500 MiB available-memory guard, and every session is bounded.
 
 ## Honest fallbacks and verification choices

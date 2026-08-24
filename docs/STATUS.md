@@ -238,3 +238,17 @@ evidence: |
 fallback_taken: none
 commit: 91ba508
 notes: Tool routing now keeps prior spoken confirmations out of the physical decision prompt, restoring llama.cpp prefix-cache reuse and preventing style imitation. Relative to the pre-optimization accepted run, maximum text-to-PTZ latency fell from 2.976 to 2.139 seconds and fresh vision from 6.001 to 4.871 seconds. Neutral-prompt Whisper transcribed `Find my glasses` in 1.454--1.470 seconds; Kokoro at speed 1.08 passed with 1.311-second first audio, 2.979-second warm synthesis, 0.005-second cached start, and 2.114 GiB free even with a duplicate verifier instance; active ALSA playback cancelled in 0.0155 seconds. The boot verifier now finds the active `microphone=true` service log even after foreground tests create newer logs, and passed with Gemma/Whisper HTTP 200. The installed boot service still needs the required human-authorized restart to load the new companion process image.
+
+## M18 Finder identity grounding
+status: DONE
+verified_by: scripts/test_finder_evidence.py + scripts/test_live_finder.py
+verified_at: 2026-08-24 09:32 SGT
+evidence: |
+  airpods_positive: PASS; direction=right; location=near a table; duration_seconds=22.589
+  absent_negative: PASS; target=bright magenta stapler; duration_seconds=31.807
+  coverage_moves: look_left,look_right,look_up,look_down
+  logs: positive=/home/iputra/gemma-companion/logs/session-20260824-092855-727643.jsonl; negative=/home/iputra/gemma-companion/logs/session-20260824-092918-386368.jsonl
+  result: PASS live AirPods detection and complete honest physical sweep
+fallback_taken: none
+commit: 06eadd3
+notes: The live service exposed an actual false positive: a magnified edge crop labeled a white cable or plastic fragment as AirPods, while its target-blind description did not support that identity. Edge-only detections now require a compact target-blind inventory plus an exact semantic identity verdict; contextual full-frame detections remain usable. The exact false-positive frame was rejected 3/3, a known genuine AirPods frame was accepted 3/3, and the live sweep rejected the cable at center before Gemma moved and found the real case. The phrase-free agent, compound vision, demo flow, arbitrary visible-reference routing, and five unfamiliar open-chat questions also passed. This commit was synced only to the Jetson and was not pushed to GitHub, as requested; the installed service still needs a human-authorized restart to load it.

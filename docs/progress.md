@@ -861,3 +861,40 @@ result: PASS boot service owns a ready offline companion session
 ```
 
 Verifier fix commit: `91ba508`.
+
+## M18 Finder identity grounding
+
+### JETSON — reproduce and reject the live false positive
+
+The restarted companion initially claimed that Apple AirPods were visible in a center frame. Inspection of the exact pixels showed only a circuit board, a phone case, and a curved white cable or plastic fragment. The target-aware edge classifier said `DETECTED`, but its target-blind description said only `a white, curved object resembling a cable or a piece of plastic`; the old color-only consistency gate therefore accepted a target that had no explicit color constraint.
+
+The finder now treats a magnified edge detection as a candidate, obtains a compact target-blind inventory, and requires a strict semantic identity verdict before it can override the contextual full-frame miss. This is generic evidence handling rather than an AirPods phrase or object rule. The systematic PTZ sweep continues after a rejected crop so another full contextual frame can resolve the object.
+
+Commands:
+
+```sh
+cd ~/gemma-companion
+./scripts/test_finder_evidence.py --image captures/sessions/capture-6c35f2af0e10450c8e831eb20d15bccf.jpg --target "Apple AirPods" --expect reject
+./scripts/test_finder_evidence.py --image captures/sessions/capture-de6806290fbe46808a50b3ac209735b7.jpg --target "small white Apple AirPods wireless-earbud charging case" --expect found
+```
+
+Each saved-frame command passed three consecutive times. Representative output:
+
+```text
+finder_evidence: PASS; expected=reject; action=look_left; location=none; log=/home/iputra/gemma-companion/logs/session-20260824-092233-476987.jsonl
+finder_evidence: PASS; expected=found; action=report_found; location=near a laptop; log=/home/iputra/gemma-companion/logs/session-20260824-092246-428775.jsonl
+```
+
+### JETSON — live physical positive and complete negative sweep
+
+The current center frame again caused the edge classifier to propose AirPods from the white cable. The new blind inventory identified `Black circuit board ... white cable ... wire`, the matcher returned `MISMATCH`, Gemma issued `look_left`, and the next full frame visibly contained the real AirPods case. A complete absent-target sweep then checked all five positions and honestly stopped.
+
+```text
+airpods_positive: PASS; direction=right; location=near a table; duration_seconds=22.589
+absent_negative: PASS; target=bright magenta stapler; duration_seconds=31.807
+coverage_moves: look_left,look_right,look_up,look_down
+logs: positive=/home/iputra/gemma-companion/logs/session-20260824-092855-727643.jsonl; negative=/home/iputra/gemma-companion/logs/session-20260824-092918-386368.jsonl
+result: PASS live AirPods detection and complete honest physical sweep
+```
+
+The phrase-free companion regression reported 1.950-second maximum model-selected PTZ latency and 4.283-second fresh vision with 2179.5 MiB available. Thirteen unfamiliar tool paraphrases, compound move-plus-inspect, arbitrary visible-reference routing, the five-beat demo router, and five unfamiliar open-chat questions all passed. Implementation commit: `06eadd3`. No GitHub push was performed.
