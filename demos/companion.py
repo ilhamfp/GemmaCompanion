@@ -19,7 +19,7 @@ from audio.interruptible import InterruptibleSpeech
 from audio.volume import VOLUME_STEP, adjust_volume, set_volume
 from camera.capture import CameraCaptureError, capture_image
 from camera.obsbot import look_center, look_down, look_left, look_right, look_up
-from demos.elderly import ElderlyFinder, FinderCancelled
+from demos.elderly import ElderlyFinder, FinderCancelled, found_target_sentence
 from tools.registry import (
     COMPANION_DECISION_SCHEMAS,
     MOVEMENT_COMPLETION_SCHEMAS,
@@ -704,11 +704,7 @@ class CompanionSession:
             else:
                 look_center()
                 self._direction = "center"
-        response = (
-            f"Your {target} is {found.location.rstrip('.')} .".replace(" .", ".")
-            if found.found
-            else found.location
-        )
+        response = found_target_sentence(target, found.location) if found.found else found.location
         result = self._result(
             "find_found" if found.found else "find_not_found",
             response,
@@ -724,7 +720,9 @@ class CompanionSession:
             location=found.location,
         )
         self._remember_turn(request, response, token)
-        self._publish_result(result, token, speak=False)
+        # The finder already printed and spoke its terminal result through
+        # _finder_say; retain the result without duplicating console output.
+        self._publish_result(result, token, speak=False, display=False)
         return result
 
     def _agent_turn(
@@ -1015,7 +1013,14 @@ class CompanionSession:
             latency_seconds=time.monotonic() - started,
         )
 
-    def _publish_result(self, result: CompanionResult, token: int, *, speak: bool = True) -> None:
+    def _publish_result(
+        self,
+        result: CompanionResult,
+        token: int,
+        *,
+        speak: bool = True,
+        display: bool = True,
+    ) -> None:
         if not self._is_current(token):
             self._log("STALE_RESULT_DISCARDED", turn=token, result_action=result.action)
             return
@@ -1030,7 +1035,7 @@ class CompanionSession:
             image_path=result.image_path,
             latency_seconds=round(result.latency_seconds, 3),
         )
-        if result.response:
+        if result.response and display:
             print(f"Gemma: {result.response}", flush=True)
             if speak and self.speech_enabled:
                 self.speaker.say(result.response)

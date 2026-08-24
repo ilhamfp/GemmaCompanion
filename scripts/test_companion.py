@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,8 @@ from demos.elderly import (  # noqa: E402
     candidate_match_is_confirmed,
     create_edge_detail_sheet,
     detail_candidate_is_consistent,
+    found_target_sentence,
+    parse_grounded_narrated_report_found,
     parse_narrated_look_action,
     parse_narrated_not_found,
     parse_textual_report_found,
@@ -118,6 +121,12 @@ def _test_raw_tool_stream_parser() -> None:
 
 
 def _test_narrated_finder_actions() -> None:
+    if found_target_sentence("glasses", "on the table") != "Your glasses are on the table.":
+        raise AssertionError("plural finder result has incorrect grammar")
+    if found_target_sentence("AirPods charging case", "by the laptop") != (
+        "Your AirPods charging case is by the laptop."
+    ):
+        raise AssertionError("singular finder result has incorrect grammar")
     accepted = {
         "I see no Apple Airbox. I will look down now.": "look_down",
         "I will search for the smartphone. I will start by looking right.": "look_right",
@@ -152,6 +161,31 @@ def _test_narrated_finder_actions() -> None:
         raise AssertionError(f"textual report_found parsed as {parsed_location!r}")
     if parse_textual_report_found("report_found{location:nearby}") is not None:
         raise AssertionError("finder accepted an ungrounded textual report_found")
+    for narrated in (
+        "I see glasses. They are on the table.",
+        "report_found glasses on the table",
+    ):
+        narrated_location = parse_grounded_narrated_report_found(
+            narrated,
+            target="glasses",
+            visual_evidence="DETECTED: glasses",
+        )
+        if narrated_location != "on the table":
+            raise AssertionError(
+                f"grounded report_found narration parsed as {narrated_location!r}"
+            )
+    if parse_grounded_narrated_report_found(
+        "I see glasses on the table.",
+        target="glasses",
+        visual_evidence="ABSENT",
+    ) is not None:
+        raise AssertionError("finder accepted narrated found result without detected evidence")
+    if parse_grounded_narrated_report_found(
+        "I do not see glasses on the table.",
+        target="glasses",
+        visual_evidence="DETECTED: glasses",
+    ) is not None:
+        raise AssertionError("finder converted negative narration into a found result")
     trailing = "I understand. I will search now.\nreport_not_found"
     if parse_trailing_search_action(trailing, "report_not_found") != "report_not_found":
         raise AssertionError("finder rejected an expected trailing action token")
@@ -169,6 +203,18 @@ def _test_edge_detail_sheet() -> None:
         with Image.open(detail) as rendered:
             if rendered.size != (1024, 576):
                 raise AssertionError(f"edge-detail sheet size was {rendered.size!r}")
+        previous = os.environ.get("GEMMA_EDGE_DETAIL_MAX_LONG_EDGE")
+        os.environ["GEMMA_EDGE_DETAIL_MAX_LONG_EDGE"] = "512"
+        try:
+            bounded = Path(create_edge_detail_sheet(source))
+            with Image.open(bounded) as rendered:
+                if rendered.size != (512, 288):
+                    raise AssertionError(f"bounded edge-detail size was {rendered.size!r}")
+        finally:
+            if previous is None:
+                os.environ.pop("GEMMA_EDGE_DETAIL_MAX_LONG_EDGE", None)
+            else:
+                os.environ["GEMMA_EDGE_DETAIL_MAX_LONG_EDGE"] = previous
 
 
 def _test_target_identity() -> None:

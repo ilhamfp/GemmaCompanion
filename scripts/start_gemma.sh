@@ -54,6 +54,15 @@ done
 export GGML_BACKEND_PATH="$cuda_backend/libggml-cuda.so"
 export LD_LIBRARY_PATH="$runtime_root:$cuda_backend${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+case "${GEMMA_MMPROJ_OFFLOAD:-on}" in
+  1|on|true|yes) mmproj_offload_arg="--mmproj-offload" ;;
+  0|off|false|no) mmproj_offload_arg="--no-mmproj-offload" ;;
+  *)
+    echo "ERROR: GEMMA_MMPROJ_OFFLOAD must be on or off" >&2
+    exit 2
+    ;;
+esac
+
 exec "$server" \
   --model "$model" \
   --mmproj "$projector" \
@@ -62,12 +71,15 @@ exec "$server" \
   --no-webui \
   --ctx-size "${GEMMA_CONTEXT_SIZE:-4096}" \
   --parallel "${GEMMA_PARALLEL:-2}" \
+  --cache-type-k "${GEMMA_CACHE_TYPE_K:-f16}" \
+  --cache-type-v "${GEMMA_CACHE_TYPE_V:-f16}" \
   --n-gpu-layers 999 \
   --device CUDA0 \
+  "$mmproj_offload_arg" \
   --no-warmup \
   --load-mode mmap \
-  --batch-size 128 \
-  --ubatch-size 128 \
+  --batch-size "${GEMMA_BATCH_SIZE:-128}" \
+  --ubatch-size "${GEMMA_UBATCH_SIZE:-128}" \
   --flash-attn on \
   --jinja \
   --skip-chat-parsing \

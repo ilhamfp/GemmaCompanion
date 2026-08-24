@@ -16,6 +16,7 @@ from PIL import Image
 DEFAULT_DEVICE = "/dev/video0"
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
+DEFAULT_MAX_LONG_EDGE = 1024
 
 
 class CameraCaptureError(RuntimeError):
@@ -26,7 +27,7 @@ def capture_image(
     output_dir: str | os.PathLike[str] | None = None,
     *,
     device: str | None = None,
-    max_long_edge: int = 1024,
+    max_long_edge: int | None = None,
     warmup_frames: int = 4,
 ) -> str:
     """Capture a fresh JPEG and return its absolute path.
@@ -37,6 +38,10 @@ def capture_image(
     """
 
     camera_device = device or os.environ.get("GEMMA_CAMERA_DEVICE", DEFAULT_DEVICE)
+    if max_long_edge is None:
+        max_long_edge = int(
+            os.environ.get("GEMMA_CAMERA_MAX_LONG_EDGE", str(DEFAULT_MAX_LONG_EDGE))
+        )
     if not Path(camera_device).exists():
         raise CameraCaptureError(f"camera device does not exist: {camera_device}")
     if max_long_edge < 64:

@@ -6,6 +6,8 @@ runtime_dir="$repo_root/.runtime/whisper-bin-ubuntu-arm64"
 source_model="$repo_root/models/ggml-tiny.en.bin"
 quant_model="$repo_root/models/ggml-tiny.en-q5_1.bin"
 port="${GEMMA_WHISPER_PORT:-8178}"
+threads="${GEMMA_WHISPER_THREADS:-6}"
+audio_context="${GEMMA_WHISPER_AUDIO_CONTEXT:-1280}"
 health="http://127.0.0.1:$port/health"
 pid_file="$repo_root/.runtime/whisper-server.pid"
 prompt="Gemma Companion. OBSBOT camera. Audio-Technica speaker. Apple AirPods charging case. smartphone. iPhone. glasses. visual scene. speaker loudness."
@@ -29,7 +31,11 @@ if server_healthy; then
   if [[ "$existing_pid" =~ ^[0-9]+$ && -r "/proc/$existing_pid/cmdline" ]]; then
     existing_command="$(tr '\0' ' ' < "/proc/$existing_pid/cmdline")"
   fi
-  if [[ "$existing_command" == *"$runtime_dir/whisper-server"* && "$existing_command" == *"--prompt $prompt"* ]]; then
+  if [[ "$existing_command" == *"$runtime_dir/whisper-server"* \
+    && "$existing_command" == *"--prompt $prompt"* \
+    && "$existing_command" == *"-t $threads"* \
+    && "$existing_command" == *"-ac $audio_context"* \
+    && "$existing_command" == *"-nt"* ]]; then
     exit 0
   fi
   if [[ "$existing_command" != *"$runtime_dir/whisper-server"* || "$existing_command" != *"--port $port"* ]]; then
@@ -56,7 +62,7 @@ fi
 
 mkdir -p "$repo_root/logs" "$repo_root/.runtime"
 nohup "$runtime_dir/whisper-server" \
-  -m "$quant_model" -t 6 -bo 1 -bs 1 -nf -ng \
+  -m "$quant_model" -t "$threads" -ac "$audio_context" -bo 1 -bs 1 -nf -ng -nt \
   --prompt "$prompt" \
   --host 127.0.0.1 --port "$port" \
   >"$repo_root/logs/whisper-server.log" 2>&1 &

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -84,6 +85,21 @@ def medical_refusal() -> str:
     return "I can't help with medical advice; please ask a caregiver or doctor."
 
 
+def found_target_sentence(target: str, location: str) -> str:
+    """Build natural singular or plural speech for one grounded location."""
+
+    final_word = re.findall(r"[a-z0-9]+", target.casefold())[-1:]
+    copula = "are" if final_word and final_word[0] in {
+        "airpods",
+        "earbuds",
+        "eyeglasses",
+        "glasses",
+        "headphones",
+        "keys",
+    } else "is"
+    return f"Your {target} {copula} {location.rstrip('.')} .".replace(" .", ".")
+
+
 def detail_candidate_is_consistent(target: str, independent_evidence: str) -> bool:
     """Apply deterministic rejection gates before semantic identity verification."""
 
@@ -119,10 +135,20 @@ def create_edge_detail_sheet(image_path: str | Path) -> str:
             (0, height - edge_height, edge_width, height),
             (width - edge_width, height - edge_height, width, height),
         )
-        sheet = Image.new("RGB", (1024, 576))
+        max_long_edge = int(os.environ.get("GEMMA_EDGE_DETAIL_MAX_LONG_EDGE", "1024"))
+        if max_long_edge < 64:
+            raise ValueError("GEMMA_EDGE_DETAIL_MAX_LONG_EDGE must be at least 64")
+        sheet_width = max_long_edge
+        sheet_height = max(2, round(max_long_edge * 9 / 16))
+        tile_width = sheet_width // 2
+        tile_height = sheet_height // 2
+        sheet = Image.new("RGB", (sheet_width, sheet_height))
         for index, box in enumerate(boxes):
-            detail = ImageOps.fit(frame.crop(box), (512, 288))
-            sheet.paste(detail, ((index % 2) * 512, (index // 2) * 288))
+            detail = ImageOps.fit(frame.crop(box), (tile_width, tile_height))
+            sheet.paste(
+                detail,
+                ((index % 2) * tile_width, (index // 2) * tile_height),
+            )
         try:
             sheet.save(temporary_path, format="JPEG", quality=92)
             if temporary_path.stat().st_size < 1024:
@@ -201,6 +227,51 @@ def parse_textual_report_found(model_text: str) -> str | None:
     location = match.group(1).replace('<|"|>', "").strip().strip("\"'").strip()
     if not location:
         return None
+    physical_anchors = (
+        "table",
+        "desk",
+        "chair",
+        "laptop",
+        "cable",
+        "cup",
+        "bag",
+        "phone",
+        "smartphone",
+        "surface",
+    )
+    if not any(anchor in location.casefold() for anchor in physical_anchors):
+        return None
+    return re.sub(r"\bsurface\b", "tabletop", location, flags=re.IGNORECASE)
+
+
+def parse_grounded_narrated_report_found(
+    model_text: str,
+    *,
+    target: str,
+    visual_evidence: str,
+) -> str | None:
+    """Recover a physical location when a grounded model narrates a found result."""
+
+    if not visual_evidence.strip().upper().startswith("DETECTED:"):
+        return None
+    normalized = " ".join(model_text.split())
+    if re.search(r"\b(?:not|no|cannot|can't|didn't|did not)\b", normalized, re.IGNORECASE):
+        return None
+    target_words = {
+        word for word in re.findall(r"[a-z0-9]+", target.casefold()) if len(word) >= 3
+    }
+    response_words = set(re.findall(r"[a-z0-9]+", normalized.casefold()))
+    if not target_words & response_words:
+        return None
+    location_match = re.search(
+        r"\b((?:on|near|beside|next to|under|behind|in front of|by)\s+"
+        r"(?:the\s+)?[^.!;\n]{1,100})",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if location_match is None:
+        return None
+    location = location_match.group(1).strip().strip("`.,;: ")
     physical_anchors = (
         "table",
         "desk",
@@ -357,6 +428,20 @@ class ElderlyFinder:
             location = self._ground_location(textual_location, target, visual_evidence)
             self.loop.log(
                 "PARSED_TEXT_ACTION",
+                tool="report_found",
+                text=model_text,
+                location=location,
+            )
+            return "report_found", location
+        narrated_location = parse_grounded_narrated_report_found(
+            model_text,
+            target=target,
+            visual_evidence=visual_evidence,
+        )
+        if narrated_location is not None:
+            location = self._ground_location(narrated_location, target, visual_evidence)
+            self.loop.log(
+                "PARSED_GROUNDED_NARRATION",
                 tool="report_found",
                 text=model_text,
                 location=location,
@@ -719,7 +804,7 @@ Answer exactly DETECTED: followed by its physical location near a table, chair, 
             if action == "report_found":
                 if not location:
                     raise AgentLoopError("Gemma reported the target without a location")
-                spoken = f"Your {target} is {location.rstrip('.')} .".replace(" .", ".")
+                spoken = found_target_sentence(target, location)
                 self._say(spoken)
                 duration = time.monotonic() - started
                 self.loop.log(

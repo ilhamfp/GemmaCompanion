@@ -43,7 +43,10 @@ def main() -> int:
     if available < 500:
         raise AssertionError(f"only {available:.1f} MiB available")
 
-    print("server: whisper.cpp 1.9.3; model: tiny.en Q5_1; threads: 6; device: CPU")
+    print(
+        "server: whisper.cpp 1.9.3; model: tiny.en Q5_1; threads: 6; "
+        "audio_context: 1280; device: CPU"
+    )
     print(f"transcript: {transcript}")
     print(f"latency_seconds: {latency:.3f}; limit: <{args.limit:.3f}")
     print(f"available_memory_mib: {available:.1f}; limit: >500")
