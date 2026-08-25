@@ -2,8 +2,6 @@
 
 **An on-device AI companion that can see, hear, speak, and look for itself.**
 
-> When Gemma does not know, it does not ask you for another picture. It looks.
-
 <p align="center">
   <img src="docs/assets/gemma-companion-prototype.jpg" width="48%" alt="Gemma Companion prototype with an OBSBOT camera, NVIDIA Jetson Orin Nano, and Audio-Technica speakerphone connected on a development bench">
   <img src="docs/assets/gemma-companion-hardware.jpg" width="48%" alt="OBSBOT Tiny SE, Audio-Technica AT-CSP1, and NVIDIA Jetson Orin Nano Developer Kit retail boxes">
@@ -17,10 +15,10 @@ Built for **Best Use of Gemma** (primary) and **Best Elderly Hack** (secondary).
 
 ## How a conversation works
 
-At boot, the Jetson starts the companion, centers the camera, inspects a fresh frame, and says **“Hi, I'm Gemma!”** when it is ready. There is no wake word.
+At boot, the Jetson starts the companion, centers the camera, inspects a fresh frame, and says **“Hi, I'm Gemma!”** when it is ready.
 
 1. Unmute the Audio-Technica microphone, speak, and mute again to close the turn.
-2. Local `whisper.cpp` converts the temporary utterance into text, then deletes the WAV.
+2. The recommended `whisper` profile transcribes the turn with a resident local `whisper.cpp` server. The experimental `direct` profile instead sends the audio to Gemma itself. Either path deletes its temporary WAV.
 3. Gemma decides whether to answer, move the camera, inspect a fresh view, or search the room.
 4. The OBSBOT acts and captures discrete stills only when the selected tool needs them.
 5. Gemma grounds its answer in the action or image, and Kokoro speaks it through the AT-CSP1.
@@ -31,10 +29,11 @@ For a find request, the OBSBOT first establishes a level pose, then checks overl
 
 ```text
 AT-CSP1 microphone
-        ↓ 16 kHz speech
-whisper.cpp → transcript
-        ↓
-Gemma 4 semantic + tool gate
+        ↓ bounded speech segment
+        ├─ recommended: local whisper.cpp → transcript ─┐
+        └─ experimental: Gemma native audio ───────────┤
+                                                       ↓
+Gemma 4 semantic + physical-tool gate
         ├─ answer normally
         ├─ look_* → OBSBOT physically moves
         └─ inspect/find → fresh JPEG → Gemma vision
@@ -69,7 +68,7 @@ make runtime
 make companion
 ```
 
-Keep the AT-CSP1 muted until Gemma says `Hi, I'm Gemma!`, then use the rhythm **unmute → speak → mute**.
+Keep the AT-CSP1 muted until Gemma says `Hi, I'm Gemma!`, then use the rhythm **unmute → speak → mute**. `make companion` uses the recommended local-Whisper profile unless `GEMMA_SPEECH_MODE=direct` is explicitly configured; the direct path is documented as an experiment in [CONTINUOUS_COMPANION.md](docs/CONTINUOUS_COMPANION.md).
 
 For automatic startup after every power-on, install and verify the service once:
 
@@ -104,13 +103,13 @@ The accepted AirPods test completed a real camera sweep and grounded the case **
 
 ## Why Gemma fits on the edge
 
-The accepted model is **Gemma 4 E2B instruction-tuned QAT Q4_0**, served by the OpenAI-compatible `llama-server` bundled with Ollama 0.32.15 and its JetPack 6 CUDA backend. The 3.10 GiB text model plus 942 MiB multimodal projector fit the 8 GB device because of the E2B 4-bit quantization. Gemma handles text reasoning, image understanding, and physical tool selection; Whisper performs speech recognition and Kokoro produces speech.
+The accepted model is **Gemma 4 E2B instruction-tuned QAT Q4_0**, served by the OpenAI-compatible `llama-server` bundled with Ollama 0.32.15 and its JetPack 6 CUDA backend. The 3.10 GiB text model plus 942 MiB multimodal projector fit the 8 GB device because of the E2B 4-bit quantization. Gemma handles text reasoning, image understanding, and physical tool selection. The recommended live profile uses Whisper for speech recognition and Kokoro for speech; the experimental profile proves Gemma can consume audio directly, but uses slower CPU-projected vision to stay within 8 GB.
 
 Measured on the accepted Jetson—not cloud estimates or latency guarantees:
 
 | Operation | Measured latency |
 |---|---:|
-| Real speech → local transcript | 1.315 s |
+| Real speech → local transcript (`whisper` profile) | 1.315 s |
 | Gemma text → text | 0.301 s |
 | Live 1024 px image → text | 1.861 s |
 | Transcript → physical PTZ | 0.869 s |
